@@ -285,18 +285,21 @@ function MiniCalendar({ value, onChange }) {
   );
 }
 
-async function createRsePdf(sourceUri, group, werkNr, einbauDate, ausbauDate) {
+async function createRsePdf(sourceUri, group, werkNr, einbauDate, ausbauDate, einbauEnabled, ausbauEnabled) {
   const targetPdf = await PDFDocument.load(await readPdf(sourceUri));
   const targetForm = targetPdf.getForm();
-  const groupNumber = Number(group.slice(-2));
-  const fields = {
-    'Werk NrRow2': werkNr.trim(),
-    TypRow2: 'LCR 160',
-    CodeRow2: `613/${String(5 + groupNumber).padStart(2, '0')}`,
-    VerwendungsartRow2: group
-  };
-  if (ausbauDate) fields.Datum = formatPdfDate(ausbauDate);
-  if (einbauDate) fields.Datum_2 = formatPdfDate(einbauDate);
+  const fields = { F: einbauEnabled ? 'x' : '', G: ausbauEnabled ? 'x' : '' };
+  if (group && werkNr.trim()) {
+    const groupNumber = Number(group.slice(-2));
+    Object.assign(fields, {
+      'Werk NrRow2': werkNr.trim(),
+      TypRow2: 'LCR 160',
+      CodeRow2: `613/${String(5 + groupNumber).padStart(2, '0')}`,
+      VerwendungsartRow2: group
+    });
+  }
+  if (ausbauEnabled && ausbauDate) fields.Datum = formatPdfDate(ausbauDate);
+  if (einbauEnabled && einbauDate) fields.Datum_2 = formatPdfDate(einbauDate);
 
   for (const [fieldName, value] of Object.entries(fields)) {
     const field = targetForm.getTextField(fieldName);
@@ -318,6 +321,8 @@ export default function App() {
   const [selectedGroup, setSelectedGroup] = useState(EEG_GROUPS[0]);
   const [werkNr, setWerkNr] = useState('');
   const [editBusy, setEditBusy] = useState(false);
+  const [einbauEnabled, setEinbauEnabled] = useState(false);
+  const [ausbauEnabled, setAusbauEnabled] = useState(false);
   const [einbauDate, setEinbauDate] = useState(null);
   const [ausbauDate, setAusbauDate] = useState(null);
   const [activeDateType, setActiveDateType] = useState(null);
@@ -372,7 +377,9 @@ export default function App() {
   }
 
   async function fillRsePdf() {
-    if (!selectedEditPdf || !rseEnabled || !selectedGroup || !werkNr.trim()) return;
+    const datesComplete = (!einbauEnabled || einbauDate) && (!ausbauEnabled || ausbauDate);
+    const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled;
+    if (!selectedEditPdf || !hasSelection || !datesComplete || (rseEnabled && (!selectedGroup || !werkNr.trim()))) return;
     setEditBusy(true);
     try {
       const outputDirectory = new Directory(Paths.document, 'MyPDF-Ausgabe');
@@ -380,7 +387,7 @@ export default function App() {
       const sourceName = selectedEditPdf.name || 'Zaehlerwechselbeleg.pdf';
       const sourceBaseName = sourceName.replace(/\.pdf$/i, '');
       const outputFile = new File(outputDirectory, `${cleanFilenamePart(sourceBaseName)}_bearbeitet.pdf`);
-      outputFile.write(await createRsePdf(selectedEditPdf.uri, selectedGroup, werkNr, einbauDate, ausbauDate));
+      outputFile.write(await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, einbauDate, ausbauDate, einbauEnabled, ausbauEnabled));
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(outputFile.uri, {
           dialogTitle: 'Bearbeitete PDF Vorschau',
@@ -408,6 +415,8 @@ export default function App() {
       setRseEnabled(false);
       setSelectedGroup(EEG_GROUPS[0]);
       setWerkNr('');
+      setEinbauEnabled(false);
+      setAusbauEnabled(false);
       setEinbauDate(null);
       setAusbauDate(null);
       setActiveDateType(null);
@@ -463,13 +472,13 @@ export default function App() {
 
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Datum</Text>
-            <Pressable style={styles.checkboxRow} onPress={() => { setActiveDateType('einbau'); if (!einbauDate) setEinbauDate(new Date()); }}>
-              <View style={[styles.checkbox, einbauDate && styles.checkboxChecked]}>{einbauDate && <Text style={styles.checkmark}>✓</Text>}</View>
+            <Pressable style={styles.checkboxRow} onPress={() => { if (einbauEnabled) { setEinbauEnabled(false); setEinbauDate(null); setActiveDateType(null); } else { setEinbauEnabled(true); setActiveDateType('einbau'); } }}>
+              <View style={[styles.checkbox, einbauEnabled && styles.checkboxChecked]}>{einbauEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
               <Text style={styles.checkboxLabel}>Einbau</Text>
               {einbauDate && <Text style={styles.dateValue}>{formatPdfDate(einbauDate)}</Text>}
             </Pressable>
-            <Pressable style={styles.checkboxRow} onPress={() => { setActiveDateType('ausbau'); if (!ausbauDate) setAusbauDate(new Date()); }}>
-              <View style={[styles.checkbox, ausbauDate && styles.checkboxChecked]}>{ausbauDate && <Text style={styles.checkmark}>✓</Text>}</View>
+            <Pressable style={styles.checkboxRow} onPress={() => { if (ausbauEnabled) { setAusbauEnabled(false); setAusbauDate(null); setActiveDateType(null); } else { setAusbauEnabled(true); setActiveDateType('ausbau'); } }}>
+              <View style={[styles.checkbox, ausbauEnabled && styles.checkboxChecked]}>{ausbauEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
               <Text style={styles.checkboxLabel}>Ausbau</Text>
               {ausbauDate && <Text style={styles.dateValue}>{formatPdfDate(ausbauDate)}</Text>}
             </Pressable>
@@ -478,11 +487,12 @@ export default function App() {
               <MiniCalendar value={activeDateType === 'einbau' ? einbauDate : ausbauDate} onChange={date => {
                 if (activeDateType === 'einbau') setEinbauDate(date);
                 else setAusbauDate(date);
+                setActiveDateType(null);
               }} />
             </>}
           </View>
 
-          <Pressable style={[styles.button, styles.primary, (!selectedEditPdf || !rseEnabled || !werkNr.trim() || editBusy) && styles.disabled]} disabled={!selectedEditPdf || !rseEnabled || !werkNr.trim() || editBusy} onPress={fillRsePdf}>
+          <Pressable style={[styles.button, styles.primary, (() => { const datesComplete = (!einbauEnabled || einbauDate) && (!ausbauEnabled || ausbauDate); const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled; return !selectedEditPdf || !hasSelection || !datesComplete || (rseEnabled && !werkNr.trim()) || editBusy; })() && styles.disabled]} disabled={(() => { const datesComplete = (!einbauEnabled || einbauDate) && (!ausbauEnabled || ausbauDate); const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled; return !selectedEditPdf || !hasSelection || !datesComplete || (rseEnabled && !werkNr.trim()) || editBusy; })()} onPress={fillRsePdf}>
             {editBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>PDF erstellen und speichern</Text>}
           </Pressable>
           <Text style={styles.note}>Nach dem Speichern öffnet sich die Vorschau. Die bearbeitete Kopie bleibt im iPhone-Dateien-Ordner „MyPDF-Ausgabe“ gespeichert.</Text>
