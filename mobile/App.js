@@ -1,6 +1,7 @@
 ﻿import React, { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
+import * as Sharing from 'expo-sharing';
 import { Directory, File, Paths } from 'expo-file-system';
 import { Asset } from 'expo-asset';
 import { PDFBool, PDFDocument, PDFName } from 'pdf-lib';
@@ -233,9 +234,8 @@ async function createFilledPdf(sourceUri, outputDirectory) {
 
 const EEG_GROUPS = Array.from({ length: 12 }, (_, index) => `EEG Gr.${String(index + 1).padStart(2, '0')}`);
 
-async function createRsePdf(group, werkNr) {
-  const template = await Asset.loadAsync(templateAsset);
-  const targetPdf = await PDFDocument.load(await readPdf(template[0].localUri || template[0].uri));
+async function createRsePdf(sourceUri, group, werkNr) {
+  const targetPdf = await PDFDocument.load(await readPdf(sourceUri));
   const targetForm = targetPdf.getForm();
   const groupNumber = Number(group.slice(-2));
   const fields = {
@@ -259,6 +259,7 @@ export default function App() {
   const [selected, setSelected] = useState([]);
   const [busy, setBusy] = useState(false);
   const [editScreen, setEditScreen] = useState(false);
+  const [selectedEditPdf, setSelectedEditPdf] = useState(null);
   const [rseEnabled, setRseEnabled] = useState(false);
   const [groupMenuOpen, setGroupMenuOpen] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState(EEG_GROUPS[0]);
@@ -315,19 +316,38 @@ export default function App() {
   }
 
   async function fillRsePdf() {
-    if (!rseEnabled || !selectedGroup || !werkNr.trim()) return;
+    if (!selectedEditPdf || !rseEnabled || !selectedGroup || !werkNr.trim()) return;
     setEditBusy(true);
     try {
       const outputDirectory = new Directory(Paths.document, 'MyPDF-Ausgabe');
       outputDirectory.create({ idempotent: true, intermediates: true });
-      const outputFile = new File(outputDirectory, `RSE_${selectedGroup.replace(' ', '_')}_${cleanFilenamePart(werkNr)}.pdf`);
-      outputFile.write(await createRsePdf(selectedGroup, werkNr));
-      Alert.alert('Fertig', `${selectedGroup} wurde mit Werk Nr. ${werkNr.trim()} eingetragen.`);
+      const sourceName = selectedEditPdf.name || 'Zaehlerwechselbeleg.pdf';
+      const sourceBaseName = sourceName.replace(/\.pdf$/i, '');
+      const outputFile = new File(outputDirectory, `${cleanFilenamePart(sourceBaseName)}_bearbeitet.pdf`);
+      outputFile.write(await createRsePdf(selectedEditPdf.uri, selectedGroup, werkNr));
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(outputFile.uri, {
+          dialogTitle: 'Bearbeitete PDF Vorschau',
+          mimeType: 'application/pdf',
+          UTI: 'com.adobe.pdf'
+        });
+      } else {
+        Alert.alert('Gespeichert', `${selectedGroup} wurde eingetragen und in „MyPDF-Ausgabe“ gespeichert.`);
+      }
     } catch (error) {
       Alert.alert('Fehler', error.message || 'Die PDF konnte nicht bearbeitet werden.');
     } finally {
       setEditBusy(false);
     }
+  }
+
+  async function chooseEditPdf() {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: 'application/pdf',
+      multiple: false,
+      copyToCacheDirectory: true
+    });
+    if (!result.canceled) setSelectedEditPdf(result.assets[0]);
   }
 
   if (editScreen) {
@@ -341,6 +361,13 @@ export default function App() {
           <Text style={styles.subtitle}>Zählerwechselbeleg gezielt ausfüllen</Text>
 
           <View style={styles.card}>
+            <Text style={styles.sectionTitle}>PDF auswählen</Text>
+            <Pressable style={styles.button} onPress={chooseEditPdf}>
+              <Text style={styles.buttonText}>Vorhandene PDF auswählen</Text>
+            </Pressable>
+            {selectedEditPdf && <Text style={styles.file}>{selectedEditPdf.name}</Text>}
+            <Text style={styles.hint}>Die ausgewählte PDF bleibt die Grundlage. Es wird eine bearbeitete Kopie gespeichert.</Text>
+
             <Text style={styles.sectionTitle}>Einbauart</Text>
             <Pressable style={styles.checkboxRow} onPress={() => setRseEnabled(value => !value)}>
               <View style={[styles.checkbox, rseEnabled && styles.checkboxChecked]}>
@@ -374,10 +401,10 @@ export default function App() {
             </>}
           </View>
 
-          <Pressable style={[styles.button, styles.primary, (!rseEnabled || !werkNr.trim() || editBusy) && styles.disabled]} disabled={!rseEnabled || !werkNr.trim() || editBusy} onPress={fillRsePdf}>
+          <Pressable style={[styles.button, styles.primary, (!selectedEditPdf || !rseEnabled || !werkNr.trim() || editBusy) && styles.disabled]} disabled={!selectedEditPdf || !rseEnabled || !werkNr.trim() || editBusy} onPress={fillRsePdf}>
             {editBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>PDF erstellen und speichern</Text>}
           </Pressable>
-          <Text style={styles.note}>Die bearbeitete Blanko-PDF wird im iPhone-Dateien-Ordner „MyPDF-Ausgabe“ gespeichert.</Text>
+          <Text style={styles.note}>Nach dem Speichern öffnet sich die Vorschau. Die bearbeitete Kopie bleibt im iPhone-Dateien-Ordner „MyPDF-Ausgabe“ gespeichert.</Text>
         </ScrollView>
       </SafeAreaView>
     );
