@@ -340,6 +340,7 @@ export default function App() {
   const [editBusy, setEditBusy] = useState(false);
   const [einbauEnabled, setEinbauEnabled] = useState(false);
   const [ausbauEnabled, setAusbauEnabled] = useState(false);
+  const [szwEnabled, setSzwEnabled] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
 
@@ -393,7 +394,9 @@ export default function App() {
   }
 
   async function fillRsePdf() {
-    const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled;
+    const effectiveEinbau = einbauEnabled || szwEnabled;
+    const effectiveAusbau = ausbauEnabled || szwEnabled;
+    const hasSelection = rseEnabled || effectiveEinbau || effectiveAusbau;
     if (!selectedEditPdf || !hasSelection || (rseEnabled && (!selectedGroup || !werkNr.trim()))) return;
     setEditBusy(true);
     try {
@@ -402,7 +405,7 @@ export default function App() {
       const sourceName = selectedEditPdf.name || 'Zaehlerwechselbeleg.pdf';
       const sourceBaseName = sourceName.replace(/\.pdf$/i, '');
       const outputFile = new File(outputDirectory, `${cleanFilenamePart(sourceBaseName)}_bearbeitet.pdf`);
-      outputFile.write(await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, einbauEnabled, ausbauEnabled));
+      outputFile.write(await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, effectiveEinbau, effectiveAusbau));
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(outputFile.uri, {
           dialogTitle: 'Bearbeitete PDF Vorschau',
@@ -432,6 +435,7 @@ export default function App() {
       setWerkNr('');
       setEinbauEnabled(false);
       setAusbauEnabled(false);
+      setSzwEnabled(false);
       setSelectedDate(null);
       setCalendarOpen(false);
       setEditScreen(true);
@@ -451,12 +455,35 @@ export default function App() {
           <Text style={styles.selectedFileName}>{selectedEditPdf?.name || 'Keine PDF ausgewählt'}</Text>
 
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Einbauart</Text>
+            <Text style={styles.sectionTitle}>Datum</Text>
+            <Pressable style={styles.dateButton} onPress={() => setCalendarOpen(open => !open)}>
+              <Text style={styles.dateButtonText}>{selectedDate ? `Datum: ${formatPdfDate(selectedDate)}` : 'Datum auswählen'}</Text>
+              <Text style={styles.dropdownArrow}>{calendarOpen ? '⌃' : '⌄'}</Text>
+            </Pressable>
+            {calendarOpen && <MiniCalendar value={selectedDate} onChange={date => { setSelectedDate(date); setCalendarOpen(false); }} />}
+            {(einbauEnabled || ausbauEnabled || szwEnabled) && <Text style={styles.calendarHint}>Das Datum wird gemäß SZE/SZA-Auswahl eingetragen. Bei SZW gilt SZA.</Text>}
+          </View>
+
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Auswahl</Text>
+            <Pressable style={styles.checkboxRow} onPress={() => setEinbauEnabled(value => !value)}>
+              <View style={[styles.checkbox, einbauEnabled && styles.checkboxChecked]}>{einbauEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
+              <Text style={styles.checkboxLabel}>SZE</Text>
+            </Pressable>
+            <Pressable style={styles.checkboxRow} onPress={() => setAusbauEnabled(value => !value)}>
+              <View style={[styles.checkbox, ausbauEnabled && styles.checkboxChecked]}>{ausbauEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
+              <Text style={styles.checkboxLabel}>SZA</Text>
+            </Pressable>
+            <Pressable style={styles.checkboxRow} onPress={() => setSzwEnabled(value => !value)}>
+              <View style={[styles.checkbox, szwEnabled && styles.checkboxChecked]}>{szwEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
+              <Text style={styles.checkboxLabel}>SZW</Text>
+              <Text style={styles.checkboxHint}>SZE + SZA</Text>
+            </Pressable>
             <Pressable style={styles.checkboxRow} onPress={() => setRseEnabled(value => !value)}>
               <View style={[styles.checkbox, rseEnabled && styles.checkboxChecked]}>
                 {rseEnabled && <Text style={styles.checkmark}>✓</Text>}
               </View>
-              <Text style={styles.checkboxLabel}>RSE Einbau</Text>
+              <Text style={styles.checkboxLabel}>RSE</Text>
             </Pressable>
 
             {rseEnabled && <>
@@ -484,25 +511,7 @@ export default function App() {
             </>}
           </View>
 
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Datum</Text>
-            <Pressable style={styles.checkboxRow} onPress={() => setEinbauEnabled(value => !value)}>
-              <View style={[styles.checkbox, einbauEnabled && styles.checkboxChecked]}>{einbauEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
-              <Text style={styles.checkboxLabel}>Einbau</Text>
-            </Pressable>
-            <Pressable style={styles.checkboxRow} onPress={() => setAusbauEnabled(value => !value)}>
-              <View style={[styles.checkbox, ausbauEnabled && styles.checkboxChecked]}>{ausbauEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
-              <Text style={styles.checkboxLabel}>Ausbau</Text>
-            </Pressable>
-            <Pressable style={styles.dateButton} onPress={() => setCalendarOpen(open => !open)}>
-              <Text style={styles.dateButtonText}>{selectedDate ? `Datum: ${formatPdfDate(selectedDate)}` : 'Datum auswählen'}</Text>
-              <Text style={styles.dropdownArrow}>{calendarOpen ? '⌃' : '⌄'}</Text>
-            </Pressable>
-            {calendarOpen && <MiniCalendar value={selectedDate} onChange={date => { setSelectedDate(date); setCalendarOpen(false); }} />}
-            {einbauEnabled && ausbauEnabled && <Text style={styles.calendarHint}>Bei Einbau und Ausbau wird das Datum nur bei Ausbau eingetragen.</Text>}
-          </View>
-
-          <Pressable style={[styles.button, styles.primary, (() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled; return !selectedEditPdf || !hasSelection || (rseEnabled && !werkNr.trim()) || editBusy; })() && styles.disabled]} disabled={(() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled; return !selectedEditPdf || !hasSelection || (rseEnabled && !werkNr.trim()) || editBusy; })()} onPress={fillRsePdf}>
+          <Pressable style={[styles.button, styles.primary, (() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled; return !selectedEditPdf || !hasSelection || (rseEnabled && !werkNr.trim()) || editBusy; })() && styles.disabled]} disabled={(() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled; return !selectedEditPdf || !hasSelection || (rseEnabled && !werkNr.trim()) || editBusy; })()} onPress={fillRsePdf}>
             {editBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>PDF erstellen und speichern</Text>}
           </Pressable>
           <Text style={styles.note}>Nach dem Speichern öffnet sich die Vorschau. Die bearbeitete Kopie bleibt im iPhone-Dateien-Ordner „MyPDF-Ausgabe“ gespeichert.</Text>
@@ -559,6 +568,7 @@ const styles = StyleSheet.create({
   checkboxChecked: { backgroundColor: '#2457d6', borderColor: '#2457d6' },
   checkmark: { color: '#fff', fontWeight: '700', fontSize: 17 },
   checkboxLabel: { color: '#172033', fontSize: 17, fontWeight: '600' },
+  checkboxHint: { marginLeft: 10, color: '#71809a', fontSize: 13 },
   label: { color: '#53627b', fontSize: 14, fontWeight: '600', marginTop: 22, marginBottom: 8 },
   dropdown: { minHeight: 50, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f8fafc' },
   dropdownText: { color: '#172033', fontSize: 16 },
