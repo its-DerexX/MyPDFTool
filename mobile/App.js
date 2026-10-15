@@ -233,8 +233,59 @@ async function createFilledPdf(sourceUri, outputDirectory) {
 }
 
 const EEG_GROUPS = Array.from({ length: 12 }, (_, index) => `EEG Gr.${String(index + 1).padStart(2, '0')}`);
+const MONTH_NAMES = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+const WEEKDAY_NAMES = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 
-async function createRsePdf(sourceUri, group, werkNr) {
+function dateKey(date) {
+  return date ? `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}` : '';
+}
+
+function formatPdfDate(date) {
+  if (!date) return '';
+  return `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}.${date.getFullYear()}`;
+}
+
+function MiniCalendar({ value, onChange }) {
+  const today = new Date();
+  const [visibleMonth, setVisibleMonth] = useState(() => new Date((value || today).getFullYear(), (value || today).getMonth(), 1));
+  const [monthMenuOpen, setMonthMenuOpen] = useState(false);
+  const year = visibleMonth.getFullYear();
+  const month = visibleMonth.getMonth();
+  const firstWeekday = (new Date(year, month, 1).getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells = Array.from({ length: Math.ceil((firstWeekday + daysInMonth) / 7) * 7 }, (_, index) => {
+    const day = index - firstWeekday + 1;
+    return day > 0 && day <= daysInMonth ? new Date(year, month, day) : null;
+  });
+
+  function moveMonth(offset) {
+    setVisibleMonth(new Date(year, month + offset, 1));
+    setMonthMenuOpen(false);
+  }
+
+  return (
+    <View style={styles.calendar}>
+      <View style={styles.calendarHeader}>
+        <Pressable style={styles.calendarArrow} onPress={() => moveMonth(-1)}><Text style={styles.calendarArrowText}>‹</Text></Pressable>
+        <Pressable style={styles.monthTitleButton} onPress={() => setMonthMenuOpen(open => !open)}>
+          <Text style={styles.monthTitle}>{MONTH_NAMES[month]} {year}⌄</Text>
+        </Pressable>
+        <Pressable style={styles.calendarArrow} onPress={() => moveMonth(1)}><Text style={styles.calendarArrowText}>›</Text></Pressable>
+      </View>
+      {monthMenuOpen && <View style={styles.monthMenu}>
+        {MONTH_NAMES.map((name, index) => <Pressable key={name} style={[styles.monthItem, index === month && styles.monthItemSelected]} onPress={() => { setVisibleMonth(new Date(year, index, 1)); setMonthMenuOpen(false); }}>
+          <Text style={[styles.monthItemText, index === month && styles.monthItemTextSelected]}>{name}</Text>
+        </Pressable>)}
+      </View>}
+      <View style={styles.weekdayRow}>{WEEKDAY_NAMES.map(day => <Text key={day} style={styles.weekday}>{day}</Text>)}</View>
+      <View style={styles.calendarGrid}>{cells.map((day, index) => <Pressable key={`${index}-${day ? day.getDate() : 'empty'}`} disabled={!day} style={[styles.dayCell, day && dateKey(day) === dateKey(value) && styles.dayCellSelected]} onPress={() => day && onChange(day)}>
+        <Text style={[styles.dayText, day && dateKey(day) === dateKey(value) && styles.dayTextSelected]}>{day ? day.getDate() : ''}</Text>
+      </Pressable>)}</View>
+    </View>
+  );
+}
+
+async function createRsePdf(sourceUri, group, werkNr, einbauDate, ausbauDate) {
   const targetPdf = await PDFDocument.load(await readPdf(sourceUri));
   const targetForm = targetPdf.getForm();
   const groupNumber = Number(group.slice(-2));
@@ -244,6 +295,8 @@ async function createRsePdf(sourceUri, group, werkNr) {
     CodeRow2: `613/${String(5 + groupNumber).padStart(2, '0')}`,
     VerwendungsartRow2: group
   };
+  if (ausbauDate) fields.Datum = formatPdfDate(ausbauDate);
+  if (einbauDate) fields.Datum_2 = formatPdfDate(einbauDate);
 
   for (const [fieldName, value] of Object.entries(fields)) {
     const field = targetForm.getTextField(fieldName);
@@ -265,6 +318,9 @@ export default function App() {
   const [selectedGroup, setSelectedGroup] = useState(EEG_GROUPS[0]);
   const [werkNr, setWerkNr] = useState('');
   const [editBusy, setEditBusy] = useState(false);
+  const [einbauDate, setEinbauDate] = useState(null);
+  const [ausbauDate, setAusbauDate] = useState(null);
+  const [activeDateType, setActiveDateType] = useState(null);
 
   async function choosePdf() {
     const result = await DocumentPicker.getDocumentAsync({
@@ -324,7 +380,7 @@ export default function App() {
       const sourceName = selectedEditPdf.name || 'Zaehlerwechselbeleg.pdf';
       const sourceBaseName = sourceName.replace(/\.pdf$/i, '');
       const outputFile = new File(outputDirectory, `${cleanFilenamePart(sourceBaseName)}_bearbeitet.pdf`);
-      outputFile.write(await createRsePdf(selectedEditPdf.uri, selectedGroup, werkNr));
+      outputFile.write(await createRsePdf(selectedEditPdf.uri, selectedGroup, werkNr, einbauDate, ausbauDate));
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(outputFile.uri, {
           dialogTitle: 'Bearbeitete PDF Vorschau',
@@ -347,7 +403,16 @@ export default function App() {
       multiple: false,
       copyToCacheDirectory: true
     });
-    if (!result.canceled) setSelectedEditPdf(result.assets[0]);
+    if (!result.canceled) {
+      setSelectedEditPdf(result.assets[0]);
+      setRseEnabled(false);
+      setSelectedGroup(EEG_GROUPS[0]);
+      setWerkNr('');
+      setEinbauDate(null);
+      setAusbauDate(null);
+      setActiveDateType(null);
+      setEditScreen(true);
+    }
   }
 
   if (editScreen) {
@@ -359,15 +424,10 @@ export default function App() {
           </Pressable>
           <Text style={styles.title}>PDF bearbeiten</Text>
           <Text style={styles.subtitle}>Zählerwechselbeleg gezielt ausfüllen</Text>
+          <Text style={styles.selectedFileTitle}>Ausgewählte PDF</Text>
+          <Text style={styles.selectedFileName}>{selectedEditPdf?.name || 'Keine PDF ausgewählt'}</Text>
 
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>PDF auswählen</Text>
-            <Pressable style={styles.button} onPress={chooseEditPdf}>
-              <Text style={styles.buttonText}>Vorhandene PDF auswählen</Text>
-            </Pressable>
-            {selectedEditPdf && <Text style={styles.file}>{selectedEditPdf.name}</Text>}
-            <Text style={styles.hint}>Die ausgewählte PDF bleibt die Grundlage. Es wird eine bearbeitete Kopie gespeichert.</Text>
-
             <Text style={styles.sectionTitle}>Einbauart</Text>
             <Pressable style={styles.checkboxRow} onPress={() => setRseEnabled(value => !value)}>
               <View style={[styles.checkbox, rseEnabled && styles.checkboxChecked]}>
@@ -401,6 +461,27 @@ export default function App() {
             </>}
           </View>
 
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Datum</Text>
+            <Pressable style={styles.checkboxRow} onPress={() => { setActiveDateType('einbau'); if (!einbauDate) setEinbauDate(new Date()); }}>
+              <View style={[styles.checkbox, einbauDate && styles.checkboxChecked]}>{einbauDate && <Text style={styles.checkmark}>✓</Text>}</View>
+              <Text style={styles.checkboxLabel}>Einbau</Text>
+              {einbauDate && <Text style={styles.dateValue}>{formatPdfDate(einbauDate)}</Text>}
+            </Pressable>
+            <Pressable style={styles.checkboxRow} onPress={() => { setActiveDateType('ausbau'); if (!ausbauDate) setAusbauDate(new Date()); }}>
+              <View style={[styles.checkbox, ausbauDate && styles.checkboxChecked]}>{ausbauDate && <Text style={styles.checkmark}>✓</Text>}</View>
+              <Text style={styles.checkboxLabel}>Ausbau</Text>
+              {ausbauDate && <Text style={styles.dateValue}>{formatPdfDate(ausbauDate)}</Text>}
+            </Pressable>
+            {activeDateType && <>
+              <Text style={styles.label}>{activeDateType === 'einbau' ? 'Datum für Einbau' : 'Datum für Ausbau'}</Text>
+              <MiniCalendar value={activeDateType === 'einbau' ? einbauDate : ausbauDate} onChange={date => {
+                if (activeDateType === 'einbau') setEinbauDate(date);
+                else setAusbauDate(date);
+              }} />
+            </>}
+          </View>
+
           <Pressable style={[styles.button, styles.primary, (!selectedEditPdf || !rseEnabled || !werkNr.trim() || editBusy) && styles.disabled]} disabled={!selectedEditPdf || !rseEnabled || !werkNr.trim() || editBusy} onPress={fillRsePdf}>
             {editBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>PDF erstellen und speichern</Text>}
           </Pressable>
@@ -421,7 +502,7 @@ export default function App() {
         <Pressable style={[styles.button, styles.primary, (!selected.length || busy) && styles.disabled]} disabled={!selected.length || busy} onPress={fillPdf}>
           {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>PDFs ausfüllen und speichern</Text>}
         </Pressable>
-        <Pressable style={[styles.button, styles.secondary]} onPress={() => setEditScreen(true)}>
+        <Pressable style={[styles.button, styles.secondary]} onPress={chooseEditPdf}>
           <Text style={styles.buttonText}>PDF bearbeiten</Text>
         </Pressable>
         <Text style={styles.note}>Die fertigen Dateien werden direkt im iPhone-Dateien-Ordner „MyPDF-Ausgabe“ gespeichert.</Text>
@@ -444,6 +525,8 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: '#fff', fontSize: 17, fontWeight: '600' },
   secondary: { backgroundColor: '#eef2f8', marginTop: 12, borderWidth: 1, borderColor: '#cbd5e5' },
   file: { marginTop: 14, color: '#2457d6', fontSize: 14 },
+  selectedFileTitle: { marginTop: 24, color: '#53627b', fontSize: 13, fontWeight: '600' },
+  selectedFileName: { marginTop: 4, color: '#172033', fontSize: 16, fontWeight: '600' },
   note: { marginTop: 28, color: '#71809a', lineHeight: 20, textAlign: 'center' },
   version: { position: 'absolute', right: 12, bottom: 8, color: '#9aa5b8', fontSize: 11 },
   editContainer: { padding: 24, paddingBottom: 40 },
@@ -464,5 +547,24 @@ const styles = StyleSheet.create({
   dropdownItem: { paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eef2f8' },
   dropdownItemText: { color: '#172033', fontSize: 16 },
   input: { minHeight: 50, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, paddingHorizontal: 14, color: '#172033', fontSize: 16, backgroundColor: '#f8fafc' },
-  hint: { marginTop: 16, color: '#71809a', fontSize: 13, lineHeight: 19 }
+  hint: { marginTop: 16, color: '#71809a', fontSize: 13, lineHeight: 19 },
+  dateValue: { marginLeft: 'auto', color: '#2457d6', fontSize: 16, fontWeight: '600' },
+  calendar: { marginTop: 4, padding: 12, borderRadius: 12, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e1e7f0' },
+  calendarHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  calendarArrow: { width: 38, height: 36, alignItems: 'center', justifyContent: 'center' },
+  calendarArrowText: { color: '#2457d6', fontSize: 30, lineHeight: 32 },
+  monthTitleButton: { paddingHorizontal: 12, paddingVertical: 8 },
+  monthTitle: { color: '#172033', fontSize: 16, fontWeight: '700' },
+  weekdayRow: { flexDirection: 'row', marginBottom: 4 },
+  weekday: { width: '14.2857%', textAlign: 'center', color: '#71809a', fontSize: 12, fontWeight: '700' },
+  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  dayCell: { width: '14.2857%', height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19 },
+  dayCellSelected: { backgroundColor: '#2457d6' },
+  dayText: { color: '#172033', fontSize: 15 },
+  dayTextSelected: { color: '#fff', fontWeight: '700' },
+  monthMenu: { marginBottom: 10, borderRadius: 10, backgroundColor: '#fff', borderWidth: 1, borderColor: '#cbd5e5', overflow: 'hidden' },
+  monthItem: { paddingVertical: 9, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: '#eef2f8' },
+  monthItemSelected: { backgroundColor: '#e8efff' },
+  monthItemText: { color: '#172033', fontSize: 14 },
+  monthItemTextSelected: { color: '#2457d6', fontWeight: '700' }
 });
