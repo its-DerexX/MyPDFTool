@@ -4,7 +4,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
 import { Directory, File, Paths } from 'expo-file-system';
 import { Asset } from 'expo-asset';
-import { PDFBool, PDFDocument, PDFName, StandardFonts, rgb } from 'pdf-lib';
+import { PDFBool, PDFDocument, PDFName, rgb } from 'pdf-lib';
 import pako from 'pako/dist/pako.cjs.js';
 import { zipSync } from 'fflate';
 
@@ -288,7 +288,7 @@ function MiniCalendar({ value, onChange }) {
 async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnabled, ausbauEnabled) {
   const targetPdf = await PDFDocument.load(await readPdf(sourceUri));
   const targetForm = targetPdf.getForm();
-  const fields = {};
+  const fields = { F: einbauEnabled ? 'x' : '', G: ausbauEnabled ? 'x' : '' };
   if (group && werkNr.trim()) {
     const groupNumber = Number(group.slice(-2));
     Object.assign(fields, {
@@ -311,19 +311,12 @@ async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnable
 
   targetForm.acroForm.dict.set(PDFName.of('NeedAppearances'), PDFBool.True);
   const page = targetPdf.getPages()[0];
-  const checkboxFont = await targetPdf.embedFont(StandardFonts.Helvetica);
-  for (const name of ['F', 'G']) {
-    const field = targetForm.getTextField(name);
-    field.setText('');
-    targetForm.removeField(field);
-  }
   const boxes = [
     { y: 593.144, selected: einbauEnabled },
     { y: 581.68, selected: ausbauEnabled }
   ];
   for (const box of boxes) {
-    page.drawRectangle({ x: 84.9594, y: box.y, width: 9.6438, height: 10.004, color: rgb(1, 1, 1), borderColor: rgb(0, 0, 0), borderWidth: 0.8 });
-    if (box.selected) page.drawText('x', { x: 87.5, y: box.y + 0.85, size: 8.5, font: checkboxFont });
+    page.drawRectangle({ x: 84.9594, y: box.y, width: 9.6438, height: 10.004, borderColor: rgb(0, 0, 0), borderWidth: 0.8 });
   }
   return targetPdf.save();
 }
@@ -461,30 +454,31 @@ export default function App() {
               <Text style={styles.dropdownArrow}>{calendarOpen ? '⌃' : '⌄'}</Text>
             </Pressable>
             {calendarOpen && <MiniCalendar value={selectedDate} onChange={date => { setSelectedDate(date); setCalendarOpen(false); }} />}
-            {(einbauEnabled || ausbauEnabled || szwEnabled) && <Text style={styles.calendarHint}>Das Datum wird gemäß SZE/SZA-Auswahl eingetragen. Bei SZW gilt SZA.</Text>}
+            {(einbauEnabled || ausbauEnabled || szwEnabled) && <Text style={styles.calendarHint}>Das Datum wird gemäß der Auswahl eingetragen. Bei SZW gilt SZA.</Text>}
           </View>
 
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Auswahl</Text>
-            <Pressable style={styles.checkboxRow} onPress={() => setEinbauEnabled(value => !value)}>
+            <View style={styles.checkboxGrid}>
+            <Pressable style={styles.checkboxGridItem} onPress={() => setEinbauEnabled(value => !value)}>
               <View style={[styles.checkbox, einbauEnabled && styles.checkboxChecked]}>{einbauEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
               <Text style={styles.checkboxLabel}>SZE</Text>
             </Pressable>
-            <Pressable style={styles.checkboxRow} onPress={() => setAusbauEnabled(value => !value)}>
+            <Pressable style={styles.checkboxGridItem} onPress={() => setAusbauEnabled(value => !value)}>
               <View style={[styles.checkbox, ausbauEnabled && styles.checkboxChecked]}>{ausbauEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
               <Text style={styles.checkboxLabel}>SZA</Text>
             </Pressable>
-            <Pressable style={styles.checkboxRow} onPress={() => setSzwEnabled(value => !value)}>
+            <Pressable style={styles.checkboxGridItem} onPress={() => setSzwEnabled(value => !value)}>
               <View style={[styles.checkbox, szwEnabled && styles.checkboxChecked]}>{szwEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
               <Text style={styles.checkboxLabel}>SZW</Text>
-              <Text style={styles.checkboxHint}>SZE + SZA</Text>
             </Pressable>
-            <Pressable style={styles.checkboxRow} onPress={() => setRseEnabled(value => !value)}>
+            <Pressable style={styles.checkboxGridItem} onPress={() => setRseEnabled(value => !value)}>
               <View style={[styles.checkbox, rseEnabled && styles.checkboxChecked]}>
                 {rseEnabled && <Text style={styles.checkmark}>✓</Text>}
               </View>
               <Text style={styles.checkboxLabel}>RSE</Text>
             </Pressable>
+            </View>
 
             {rseEnabled && <>
               <Text style={styles.label}>EEG-Gruppe</Text>
@@ -568,7 +562,8 @@ const styles = StyleSheet.create({
   checkboxChecked: { backgroundColor: '#2457d6', borderColor: '#2457d6' },
   checkmark: { color: '#fff', fontWeight: '700', fontSize: 17 },
   checkboxLabel: { color: '#172033', fontSize: 17, fontWeight: '600' },
-  checkboxHint: { marginLeft: 10, color: '#71809a', fontSize: 13 },
+  checkboxGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  checkboxGridItem: { width: '48%', flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
   label: { color: '#53627b', fontSize: 14, fontWeight: '600', marginTop: 22, marginBottom: 8 },
   dropdown: { minHeight: 50, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f8fafc' },
   dropdownText: { color: '#172033', fontSize: 16 },
