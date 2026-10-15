@@ -4,7 +4,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
 import { Directory, File, Paths } from 'expo-file-system';
 import { Asset } from 'expo-asset';
-import { PDFBool, PDFDocument, PDFName } from 'pdf-lib';
+import { PDFBool, PDFDocument, PDFName, StandardFonts } from 'pdf-lib';
 import pako from 'pako/dist/pako.cjs.js';
 import { zipSync } from 'fflate';
 
@@ -285,10 +285,10 @@ function MiniCalendar({ value, onChange }) {
   );
 }
 
-async function createRsePdf(sourceUri, group, werkNr, einbauDate, ausbauDate, einbauEnabled, ausbauEnabled) {
+async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnabled, ausbauEnabled) {
   const targetPdf = await PDFDocument.load(await readPdf(sourceUri));
   const targetForm = targetPdf.getForm();
-  const fields = { F: einbauEnabled ? 'x' : '', G: ausbauEnabled ? 'x' : '' };
+  const fields = { F: '', G: '' };
   if (group && werkNr.trim()) {
     const groupNumber = Number(group.slice(-2));
     Object.assign(fields, {
@@ -298,12 +298,9 @@ async function createRsePdf(sourceUri, group, werkNr, einbauDate, ausbauDate, ei
       VerwendungsartRow2: group
     });
   }
-  if (einbauEnabled && ausbauEnabled) {
-    const combinedDate = ausbauDate || einbauDate;
-    if (combinedDate) fields.Datum = formatPdfDate(combinedDate);
-  } else {
-    if (ausbauEnabled && ausbauDate) fields.Datum = formatPdfDate(ausbauDate);
-    if (einbauEnabled && einbauDate) fields.Datum_2 = formatPdfDate(einbauDate);
+  if (selectedDate) {
+    if (ausbauEnabled) fields.Datum = formatPdfDate(selectedDate);
+    else if (einbauEnabled) fields.Datum_2 = formatPdfDate(selectedDate);
   }
 
   for (const [fieldName, value] of Object.entries(fields)) {
@@ -313,6 +310,10 @@ async function createRsePdf(sourceUri, group, werkNr, einbauDate, ausbauDate, ei
   }
 
   targetForm.acroForm.dict.set(PDFName.of('NeedAppearances'), PDFBool.True);
+  const page = targetPdf.getPages()[0];
+  const checkboxFont = await targetPdf.embedFont(StandardFonts.Helvetica);
+  if (einbauEnabled) page.drawText('x', { x: 87.5, y: 594.0, size: 8.5, font: checkboxFont });
+  if (ausbauEnabled) page.drawText('x', { x: 87.5, y: 582.5, size: 8.5, font: checkboxFont });
   return targetPdf.save();
 }
 
@@ -328,9 +329,8 @@ export default function App() {
   const [editBusy, setEditBusy] = useState(false);
   const [einbauEnabled, setEinbauEnabled] = useState(false);
   const [ausbauEnabled, setAusbauEnabled] = useState(false);
-  const [einbauDate, setEinbauDate] = useState(null);
-  const [ausbauDate, setAusbauDate] = useState(null);
-  const [activeDateType, setActiveDateType] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [calendarOpen, setCalendarOpen] = useState(false);
 
   async function choosePdf() {
     const result = await DocumentPicker.getDocumentAsync({
@@ -382,11 +382,8 @@ export default function App() {
   }
 
   async function fillRsePdf() {
-    const datesComplete = einbauEnabled && ausbauEnabled
-      ? Boolean(einbauDate || ausbauDate)
-      : (!einbauEnabled || einbauDate) && (!ausbauEnabled || ausbauDate);
     const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled;
-    if (!selectedEditPdf || !hasSelection || !datesComplete || (rseEnabled && (!selectedGroup || !werkNr.trim()))) return;
+    if (!selectedEditPdf || !hasSelection || (rseEnabled && (!selectedGroup || !werkNr.trim()))) return;
     setEditBusy(true);
     try {
       const outputDirectory = new Directory(Paths.document, 'MyPDF-Ausgabe');
@@ -394,7 +391,7 @@ export default function App() {
       const sourceName = selectedEditPdf.name || 'Zaehlerwechselbeleg.pdf';
       const sourceBaseName = sourceName.replace(/\.pdf$/i, '');
       const outputFile = new File(outputDirectory, `${cleanFilenamePart(sourceBaseName)}_bearbeitet.pdf`);
-      outputFile.write(await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, einbauDate, ausbauDate, einbauEnabled, ausbauEnabled));
+      outputFile.write(await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, einbauEnabled, ausbauEnabled));
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(outputFile.uri, {
           dialogTitle: 'Bearbeitete PDF Vorschau',
@@ -424,9 +421,8 @@ export default function App() {
       setWerkNr('');
       setEinbauEnabled(false);
       setAusbauEnabled(false);
-      setEinbauDate(null);
-      setAusbauDate(null);
-      setActiveDateType(null);
+      setSelectedDate(null);
+      setCalendarOpen(false);
       setEditScreen(true);
     }
   }
@@ -479,28 +475,23 @@ export default function App() {
 
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Datum</Text>
-            <Pressable style={styles.checkboxRow} onPress={() => { if (einbauEnabled) { setEinbauEnabled(false); setEinbauDate(null); setActiveDateType(null); } else { setEinbauEnabled(true); setActiveDateType('einbau'); } }}>
+            <Pressable style={styles.checkboxRow} onPress={() => setEinbauEnabled(value => !value)}>
               <View style={[styles.checkbox, einbauEnabled && styles.checkboxChecked]}>{einbauEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
               <Text style={styles.checkboxLabel}>Einbau</Text>
-              {einbauDate && <Text style={styles.dateValue}>{formatPdfDate(einbauDate)}</Text>}
             </Pressable>
-            <Pressable style={styles.checkboxRow} onPress={() => { if (ausbauEnabled) { setAusbauEnabled(false); setAusbauDate(null); setActiveDateType(null); } else { setAusbauEnabled(true); setActiveDateType('ausbau'); } }}>
+            <Pressable style={styles.checkboxRow} onPress={() => setAusbauEnabled(value => !value)}>
               <View style={[styles.checkbox, ausbauEnabled && styles.checkboxChecked]}>{ausbauEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
               <Text style={styles.checkboxLabel}>Ausbau</Text>
-              {ausbauDate && <Text style={styles.dateValue}>{formatPdfDate(ausbauDate)}</Text>}
             </Pressable>
-            {activeDateType && <>
-              <Text style={styles.label}>{activeDateType === 'einbau' ? 'Datum für Einbau' : 'Datum für Ausbau'}</Text>
-              {einbauEnabled && ausbauEnabled && <Text style={styles.calendarHint}>Bei Einbau und Ausbau wird das Datum nur bei Ausbau eingetragen.</Text>}
-              <MiniCalendar value={activeDateType === 'einbau' ? einbauDate : ausbauDate} onChange={date => {
-                if (activeDateType === 'einbau') setEinbauDate(date);
-                else setAusbauDate(date);
-                setActiveDateType(null);
-              }} />
-            </>}
+            <Pressable style={styles.dateButton} onPress={() => setCalendarOpen(open => !open)}>
+              <Text style={styles.dateButtonText}>{selectedDate ? `Datum: ${formatPdfDate(selectedDate)}` : 'Datum auswählen'}</Text>
+              <Text style={styles.dropdownArrow}>{calendarOpen ? '⌃' : '⌄'}</Text>
+            </Pressable>
+            {calendarOpen && <MiniCalendar value={selectedDate} onChange={date => { setSelectedDate(date); setCalendarOpen(false); }} />}
+            {einbauEnabled && ausbauEnabled && <Text style={styles.calendarHint}>Bei Einbau und Ausbau wird das Datum nur bei Ausbau eingetragen.</Text>}
           </View>
 
-          <Pressable style={[styles.button, styles.primary, (() => { const datesComplete = einbauEnabled && ausbauEnabled ? Boolean(einbauDate || ausbauDate) : (!einbauEnabled || einbauDate) && (!ausbauEnabled || ausbauDate); const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled; return !selectedEditPdf || !hasSelection || !datesComplete || (rseEnabled && !werkNr.trim()) || editBusy; })() && styles.disabled]} disabled={(() => { const datesComplete = einbauEnabled && ausbauEnabled ? Boolean(einbauDate || ausbauDate) : (!einbauEnabled || einbauDate) && (!ausbauEnabled || ausbauDate); const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled; return !selectedEditPdf || !hasSelection || !datesComplete || (rseEnabled && !werkNr.trim()) || editBusy; })()} onPress={fillRsePdf}>
+          <Pressable style={[styles.button, styles.primary, (() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled; return !selectedEditPdf || !hasSelection || (rseEnabled && !werkNr.trim()) || editBusy; })() && styles.disabled]} disabled={(() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled; return !selectedEditPdf || !hasSelection || (rseEnabled && !werkNr.trim()) || editBusy; })()} onPress={fillRsePdf}>
             {editBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>PDF erstellen und speichern</Text>}
           </Pressable>
           <Text style={styles.note}>Nach dem Speichern öffnet sich die Vorschau. Die bearbeitete Kopie bleibt im iPhone-Dateien-Ordner „MyPDF-Ausgabe“ gespeichert.</Text>
@@ -568,6 +559,8 @@ const styles = StyleSheet.create({
   hint: { marginTop: 16, color: '#71809a', fontSize: 13, lineHeight: 19 },
   calendarHint: { marginBottom: 8, color: '#71809a', fontSize: 13, lineHeight: 18 },
   dateValue: { marginLeft: 'auto', color: '#2457d6', fontSize: 16, fontWeight: '600' },
+  dateButton: { minHeight: 50, marginTop: 14, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f8fafc' },
+  dateButtonText: { color: '#172033', fontSize: 16 },
   calendar: { marginTop: 4, padding: 12, borderRadius: 12, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e1e7f0' },
   calendarHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   calendarArrow: { width: 38, height: 36, alignItems: 'center', justifyContent: 'center' },
