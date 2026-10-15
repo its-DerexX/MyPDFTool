@@ -531,7 +531,7 @@ export default function App() {
           <Text style={styles.buttonText}>PDF bearbeiten</Text>
         </Pressable>
         <Text style={styles.note}>Die fertigen Dateien werden direkt im iPhone-Dateien-Ordner „MyPDF-Ausgabe“ gespeichert.</Text>
-        <Text style={styles.version}>Update Version 1.2</Text>
+        <Text style={styles.version}>Update Version 1.3</Text>
       </View>
     </SafeAreaView>
   );
