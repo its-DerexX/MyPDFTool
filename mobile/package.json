@@ -1,0 +1,28 @@
+{
+  "name": "mypdftool-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "main": "node_modules/expo/AppEntry.js",
+  "scripts": {
+    "start": "expo start --tunnel",
+    "android": "expo start --android",
+    "ios": "expo start --ios"
+  },
+  "dependencies": {
+    "expo": "^57.0.0",
+    "expo-asset": "~57.0.19",
+    "expo-document-picker": "~57.0.3",
+    "expo-file-system": "~57.0.7",
+    "expo-sharing": "~57.0.22",
+    "expo-updates": "~57.0.25",
+    "fflate": "^0.8.3",
+    "pako": "^3.0.2",
+    "pdf-lib": "^1.17.1",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-unarchive": "^1.1.0"
+  },
+  "devDependencies": {
+    "@expo/ngrok": "^4.1.3"
+  }
+}

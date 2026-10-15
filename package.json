@@ -1,0 +1,13 @@
+{
+  "name": "mypdftool",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lokales Werkzeug zum Übertragen von PDF-Formulardaten in ein Blanko-PDF",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "pdf-lib": "^1.17.1"
+  }
+}

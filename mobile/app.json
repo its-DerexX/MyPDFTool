@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "MyPDFTool",
+    "slug": "mypdftool",
+    "version": "1.0.0",
+    "icon": "./assets/icon.png",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "assets/**/*"
+    ],
+    "plugins": [
+      "expo-asset",
+      "expo-sharing"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "646b269c-a3bd-4bc9-afbd-09baff15cc4d"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/646b269c-a3bd-4bc9-afbd-09baff15cc4d"
+    },
+    "android": {},
+    "ios": {
+      "bundleIdentifier": "com.newutopia.mypdftool",
+      "infoPlist": {
+        "UIFileSharingEnabled": true,
+        "LSSupportsOpeningDocumentsInPlace": true,
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    }
+  }
+}

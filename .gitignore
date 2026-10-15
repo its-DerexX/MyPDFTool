@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+mobile/node_modules/
+
+# Local/editor files
+.vs/
+.vscode/
+*.log
+
+# Generated PDFs and local test output
+output/
+examples/
+mobile/output-form-test.pdf
+
+# Expo/export build artifacts
+mobile/dist-check/
+mobile/dist-version-check/
+mobile/dist-address-check/
+mobile/.expo/
+
+# Local environment files
+.env
+.env.*
+!.env.example

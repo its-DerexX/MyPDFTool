@@ -1,0 +1,318 @@
+﻿import React, { useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
+import { Directory, File, Paths } from 'expo-file-system';
+import { Asset } from 'expo-asset';
+import { PDFBool, PDFDocument, PDFName } from 'pdf-lib';
+import pako from 'pako/dist/pako.cjs.js';
+import { zipSync } from 'fflate';
+
+const templateAsset = require('./assets/blanko.pdf');
+const FORM_FONT_SIZE = 9.268;
+
+async function readPdf(uri) {
+  return new Uint8Array(await new File(uri).arrayBuffer());
+}
+
+async function extractPdfText(uri) {
+  const bytes = await readPdf(uri);
+  const binary = Array.from(bytes, byte => String.fromCharCode(byte)).join('');
+  const text = [];
+  let streamStart = 0;
+  while ((streamStart = binary.indexOf('stream', streamStart)) >= 0) {
+    let dataStart = streamStart + 6;
+    if (binary[dataStart] === '\r') dataStart++;
+    if (binary[dataStart] === '\n') dataStart++;
+    const dataEnd = binary.indexOf('endstream', dataStart);
+    if (dataEnd < 0) break;
+    try {
+      const compressed = bytes.slice(dataStart, dataEnd);
+      const decoded = pako.inflate(compressed);
+      const content = Array.from(decoded, byte => String.fromCharCode(byte)).join('');
+      const arrays = content.match(/\[[\s\S]*?\]\s*TJ/g) || [];
+      for (const array of arrays) {
+        const strings = array.match(/\((?:\\.|[^\\)])*\)/g) || [];
+        for (const string of strings) text.push(decodePdfString(string.slice(1, -1)));
+      }
+    } catch (_) {}
+    streamStart = dataEnd + 9;
+  }
+  return text.join('\n');
+}
+
+function decodePdfString(value) {
+  return value.replace(/\\([0-7]{1,3}|\\|\(|\)|n|r|t|b|f)/g, (_, escaped) => {
+    if (/^[0-7]/.test(escaped)) return String.fromCharCode(parseInt(escaped, 8));
+    return { n: '\n', r: '\r', t: '\t', b: '\b', f: '\f' }[escaped] || escaped;
+  });
+}
+
+const POSTAL_AREAS = {
+  '63571': { gemeinde: 'Gelnhausen', ortsteile: ['Gelnhausen-Mitte', 'Haitz', 'Hailer', 'Höchst', 'Meerholz', 'Roth'] },
+  '63584': { gemeinde: 'Gründau', ortsteile: ['Breitenborn', 'Gettenbach', 'Hain-Gründau', 'Lieblos', 'Mittel-Gründau', 'Niedergründau', 'Rothenbergen'] },
+  '63579': { gemeinde: 'Freigericht', ortsteile: ['Altenmittlau', 'Bernbach', 'Horbach', 'Neuses', 'Somborn'] },
+  '63594': { gemeinde: 'Hasselroth', ortsteile: ['Gondsroth', 'Neuenhaßlau', 'Niedermittlau'] },
+  '63589': { gemeinde: 'Linsengericht', ortsteile: ['Altenhaßlau', 'Eidengesäß', 'Geislitz', 'Großenhausen', 'Lützelhausen'] },
+  '63633': { gemeinde: 'Birstein', ortsteile: ['Birstein', 'Bösgesäß', 'Böß-Gesäß', 'Fischborn', 'Hettersroth', 'Illnhausen', 'Kirchbracht', 'Lichenroth', 'Mauswinkel', 'Oberreichenbach', 'Obersotzbach', 'Unterreichenbach', 'Untersotzbach', 'Völzberg', 'Wettges', 'Wüstwillenroth'] },
+  '63636': { gemeinde: 'Brachttal', ortsteile: ['Schlierbach', 'Hellstein', 'Neuenschmidten', 'Spielberg', 'Udenhain', 'Streitberg'] },
+  '36399': { gemeinde: 'Freiensteinau', ortsteile: ['Freiensteinau', 'Fleschenbach', 'Gunzenau', 'Holzmühl', 'Nieder-Moos', 'Ober-Moos', 'Radmühl', 'Radmühl I', 'Radmühl II', 'Reichlos', 'Reinhards', 'Salz', 'Weidenau'] },
+  '63607': { gemeinde: 'Wächtersbach', ortsteile: ['Wächtersbach', 'Aufenau', 'Hesseldorf', 'Leisenwald', 'Neudorf', 'Waldensberg', 'Weilers', 'Wittgenborn'] },
+  '63619': { gemeinde: 'Bad Orb', ortsteile: ['Bad Orb'] }
+};
+
+function normalizeLocation(value) {
+  return value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/ß/g, 'ss').replace(/[^a-z0-9]/g, '');
+}
+
+function resolvePostalLocation(postal, rawLocation) {
+  const area = POSTAL_AREAS[postal];
+  if (!area) return { gemeinde: rawLocation, ortsteil: '' };
+  const normalized = normalizeLocation(rawLocation);
+  const municipality = normalizeLocation(area.gemeinde);
+  const ortsteil = area.ortsteile.find(value => normalized.includes(normalizeLocation(value)));
+  return {
+    gemeinde: area.gemeinde,
+    ortsteil: ortsteil && normalizeLocation(ortsteil) !== municipality ? ortsteil : ''
+  };
+}
+
+function cleanFilenamePart(value) {
+  return String(value || '').replace(/[<>:"/\\|?*\u0000-\u001F]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function fileExtension(name) {
+  const match = String(name || '').toLowerCase().match(/\.([a-z0-9]+)$/);
+  return match ? match[1] : '';
+}
+
+function nativePath(uri) {
+  return decodeURI(uri.replace(/^file:\/\//, ''));
+}
+
+async function expandSource(asset) {
+  const extension = fileExtension(asset.name);
+  if (extension === 'pdf') return [{ uri: asset.uri, name: asset.name }];
+  if (extension !== 'zip' && extension !== 'rar') {
+    throw new Error(`Nicht unterstütztes Dateiformat: ${asset.name}`);
+  }
+
+  // RAR/ZIP extraction is native and therefore requires the installed iOS build,
+  // not Expo Go. The module is loaded only when an archive is actually selected.
+  const { unarchive } = require('react-native-unarchive');
+  const archiveFile = new File(Paths.cache, `mypdftool_archive_${Date.now()}.${extension}`);
+  archiveFile.write(await readPdf(asset.uri));
+  const extractionDirectory = new Directory(Paths.cache, `mypdftool_extract_${Date.now()}`);
+  extractionDirectory.create({ idempotent: true, intermediates: true });
+  const result = await unarchive(nativePath(archiveFile.uri), nativePath(extractionDirectory.uri));
+  const pdfs = result.files.filter(file => fileExtension(file.name) === 'pdf');
+  if (!pdfs.length) throw new Error(`In „${asset.name}“ wurde keine PDF-Datei gefunden.`);
+  return pdfs.map(file => ({
+    uri: file.path.startsWith('file://') ? file.path : `file://${file.path}`,
+    name: file.name
+  }));
+}
+
+function blockBetween(lines, startLabel, endLabel) {
+  const start = lines.findIndex(line => line === startLabel);
+  if (start < 0) return [];
+  const end = lines.findIndex((line, index) => index > start && line === endLabel);
+  return lines.slice(start + 1, end < 0 ? lines.length : end);
+}
+
+function parseAddressLine(line) {
+  // Accept single house numbers as well as ranges such as 58-60, 58 – 60,
+  // and common additions such as 12a or 12/14.
+  const match = String(line || '').trim().match(/^(.+?)\s+(\d+[a-zA-Z]?(?:\s*[-–—/]\s*\d+[a-zA-Z]?)?)$/u);
+  if (!match) return null;
+  return {
+    street: match[1].trim(),
+    houseNumber: match[2].replace(/[–—]/g, '-').replace(/\s*[-/]\s*/g, value => value.includes('/') ? '/' : '-')
+  };
+}
+
+function parsePostalLine(line) {
+  return String(line || '').trim().match(/^(\d{5}),?\s*(.+)$/);
+}
+
+function parsePerson(lines) {
+  // Anschlussnehmer normally uses three lines:
+  //   name / street + house number / postal code + town
+  // Company customers use four lines and put the company between name and address.
+  const hasCompany = lines.length >= 4;
+  const fullName = lines[0] || '';
+  const nameParts = fullName.split(/\s+/).filter(Boolean);
+  const company = hasCompany ? (lines[1] || '') : '';
+  const street = lines[hasCompany ? 2 : 1] || '';
+  const address = parseAddressLine(street);
+  const postal = parsePostalLine(lines[hasCompany ? 3 : 2]);
+  return {
+    fullName,
+    firma: company,
+    vorname: nameParts.shift() || '',
+    name: nameParts.join(' '),
+    strasse: address ? address.street : street,
+    hausnummer: address ? address.houseNumber : '',
+    plz: postal ? postal[1] : '',
+    ort: postal ? postal[2] : ''
+  };
+}
+
+function parseSourceData(text) {
+  const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const customer = parsePerson(blockBetween(lines, 'Anschlussnehmer', 'Kontaktdaten:'));
+  const customerLocation = resolvePostalLocation(customer.plz, customer.ort);
+  const applicant = parsePerson(blockBetween(lines, 'Antragsteller', 'Kontaktdaten:'));
+  const installer = parsePerson(blockBetween(lines, 'Fachbetrieb:', 'Fachkraft:'));
+  const site = blockBetween(lines, 'Anschlussstandort', 'Tiefbau');
+  const siteAddress = site.map(parseAddressLine).find(Boolean);
+  const sitePostalMatch = site.map(parsePostalLine).find(Boolean);
+  const sitePostal = sitePostalMatch ? {
+    plz: sitePostalMatch[1],
+    ...resolvePostalLocation(sitePostalMatch[1], sitePostalMatch[2])
+  } : null;
+  const customerContact = blockBetween(lines, 'Kontaktdaten:', 'Antragsteller');
+  const installerContact = blockBetween(lines, 'Antragsteller', 'Antragsdaten');
+  const phone = valueAfter(customerContact, 'Telefon:');
+  const email = valueAfter(customerContact, 'E-Mail:');
+  const installerPhone = valueAfter(installerContact, 'Telefon:') || valueAfter(installerContact, 'Telefon:');
+  const installerEmail = valueAfter(installerContact, 'E-Mail:');
+  const preferredContact = email || phone;
+  return {
+    'Name': customer.name,
+    'Vorname': customer.vorname,
+    'Geburtsdatum bei Privatpersonen bzw RegistergerichtRegisternummer der Firma': customer.firma,
+    'Straße': customer.strasse,
+    'HausNr': customer.hausnummer,
+    'Postleitzahl_2': customer.plz,
+    'Ort_2': customer.plz ? customerLocation.gemeinde : customer.ort,
+    'Telefon Fax EMail': preferredContact,
+    'Straße ggf Anschlussnutzer': siteAddress ? siteAddress.street : '',
+    'HausNr ggf Anschlussnutzer': siteAddress ? siteAddress.houseNumber : '',
+    'Postleitzahl': sitePostal ? sitePostal.plz : '',
+    'Ort': sitePostal ? sitePostal.gemeinde : '',
+    'Ortsteil  FlurstückNr  Etage': sitePostal ? sitePostal.ortsteil : '',
+    // The installer/company section is intentionally left untouched.
+  };
+}
+
+function valueAfter(lines, label) {
+  const index = lines.findIndex(line => line.startsWith(label));
+  return index < 0 ? '' : lines[index].slice(label.length).trim();
+}
+
+async function createFilledPdf(sourceUri, outputDirectory) {
+  const sourceText = await extractPdfText(sourceUri);
+  const values = parseSourceData(sourceText);
+  const template = await Asset.loadAsync(templateAsset);
+  const targetPdf = await PDFDocument.load(await readPdf(template[0].localUri || template[0].uri));
+  const targetForm = targetPdf.getForm();
+  let filled = 0;
+
+  for (const [fieldName, value] of Object.entries(values)) {
+    try {
+      const field = targetForm.getTextField(fieldName);
+      field.setText(value || '');
+      field.setFontSize(FORM_FONT_SIZE);
+      filled++;
+    } catch (_) {}
+  }
+
+  if (filled === 0) throw new Error('Die Quelldatei konnte nicht gelesen werden. Bitte die Antragsdaten-PDF auswählen.');
+
+  // Keep the existing AcroForm widgets and let the PDF viewer render the values,
+  // just as it does when a user fills the original blank form manually.
+  targetForm.acroForm.dict.set(PDFName.of('NeedAppearances'), PDFBool.True);
+  const outputBytes = await targetPdf.save();
+  const address = [values['Straße ggf Anschlussnutzer'], values['HausNr ggf Anschlussnutzer']]
+    .filter(Boolean).join(' ');
+  const place = values['Ortsteil  FlurstückNr  Etage'] || values['Ort'];
+  const filename = [values.Name, address, place].map(cleanFilenamePart).filter(Boolean).join(', ') || 'Zaehlerwechselbeleg';
+  return { filename: `${filename}.pdf`, bytes: outputBytes, filled };
+}
+
+export default function App() {
+  const [selected, setSelected] = useState([]);
+  const [busy, setBusy] = useState(false);
+
+  async function choosePdf() {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ['application/pdf', 'application/zip', 'application/x-rar-compressed', 'application/x-rar'],
+      multiple: true,
+      copyToCacheDirectory: true
+    });
+    if (!result.canceled) setSelected(result.assets);
+  }
+
+  async function fillPdf() {
+    if (!selected.length) return;
+    setBusy(true);
+    try {
+      const mode = await new Promise(resolve => Alert.alert(
+        'Speicherformat auswählen',
+        'Wie sollen die fertigen PDFs gespeichert werden?',
+        [
+          { text: 'Als ZIP-Datei', onPress: () => resolve('zip') },
+          { text: 'Als einzelne PDFs', onPress: () => resolve('pdfs') },
+          { text: 'Abbrechen', style: 'cancel', onPress: () => resolve(null) }
+        ],
+        { cancelable: true, onDismiss: () => resolve(null) }
+      ));
+      if (!mode) return;
+
+      const outputDirectory = new Directory(Paths.document, 'MyPDF-Ausgabe');
+      outputDirectory.create({ idempotent: true, intermediates: true });
+      const sources = [];
+      for (const asset of selected) sources.push(...await expandSource(asset));
+      const generated = [];
+      for (const source of sources) generated.push(await createFilledPdf(source.uri, outputDirectory));
+
+      if (mode === 'zip') {
+        const files = Object.fromEntries(generated.map(file => [file.filename, file.bytes]));
+        const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+        const zipFile = new File(outputDirectory, `Zaehlerwechselbelege_${stamp}.zip`);
+        zipFile.write(zipSync(files));
+      } else {
+        for (const file of generated) {
+          const outputFile = new File(outputDirectory, file.filename);
+          outputFile.write(file.bytes);
+        }
+      }
+      Alert.alert('Fertig', `${generated.length} PDF${generated.length === 1 ? '' : 's'} wurden in „MyPDF-Ausgabe“ gespeichert.`);
+    } catch (error) {
+      Alert.alert('Fehler', error.message || 'Die PDF konnte nicht verarbeitet werden.');
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <SafeAreaView style={styles.safe}>
+      <View style={styles.container}>
+        <Text style={styles.title}>MyPDFTool</Text>
+        <Text style={styles.subtitle}>Zählerwechselbeleg ausfüllen</Text>
+        <Text style={styles.help}>Wähle einzelne PDFs oder ZIP-/RAR-Dateien aus. Jede enthaltene PDF wird separat gelesen und ausgefüllt.</Text>
+        <Pressable style={styles.button} onPress={choosePdf}><Text style={styles.buttonText}>Quellen auswählen</Text></Pressable>
+        {selected.length > 0 && <Text style={styles.file}>{selected.length} Quelle{selected.length === 1 ? '' : 'n'} ausgewählt</Text>}
+        <Pressable style={[styles.button, styles.primary, (!selected.length || busy) && styles.disabled]} disabled={!selected.length || busy} onPress={fillPdf}>
+          {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>PDFs ausfüllen und speichern</Text>}
+        </Pressable>
+        <Text style={styles.note}>Die fertigen Dateien werden direkt im iPhone-Dateien-Ordner „MyPDF-Ausgabe“ gespeichert.</Text>
+        <Text style={styles.version}>Update Version 1.2</Text>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: '#f5f7fb' },
+  container: { flex: 1, padding: 24, justifyContent: 'center' },
+  title: { fontSize: 34, fontWeight: '700', color: '#172033' },
+  subtitle: { fontSize: 21, marginTop: 6, color: '#3d4c68' },
+  help: { fontSize: 16, lineHeight: 24, marginTop: 28, color: '#53627b' },
+  button: { minHeight: 54, borderRadius: 12, backgroundColor: '#dce4f2', alignItems: 'center', justifyContent: 'center', marginTop: 24 },
+  primary: { backgroundColor: '#2457d6', marginTop: 12 },
+  disabled: { opacity: 0.45 },
+  buttonText: { color: '#172033', fontSize: 17, fontWeight: '600' },
+  file: { marginTop: 14, color: '#2457d6', fontSize: 14 },
+  note: { marginTop: 28, color: '#71809a', lineHeight: 20, textAlign: 'center' },
+  version: { position: 'absolute', right: 12, bottom: 8, color: '#9aa5b8', fontSize: 11 }
+});
