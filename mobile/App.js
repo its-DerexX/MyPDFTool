@@ -298,8 +298,13 @@ async function createRsePdf(sourceUri, group, werkNr, einbauDate, ausbauDate, ei
       VerwendungsartRow2: group
     });
   }
-  if (ausbauEnabled && ausbauDate) fields.Datum = formatPdfDate(ausbauDate);
-  if (einbauEnabled && einbauDate) fields.Datum_2 = formatPdfDate(einbauDate);
+  if (einbauEnabled && ausbauEnabled) {
+    const combinedDate = ausbauDate || einbauDate;
+    if (combinedDate) fields.Datum = formatPdfDate(combinedDate);
+  } else {
+    if (ausbauEnabled && ausbauDate) fields.Datum = formatPdfDate(ausbauDate);
+    if (einbauEnabled && einbauDate) fields.Datum_2 = formatPdfDate(einbauDate);
+  }
 
   for (const [fieldName, value] of Object.entries(fields)) {
     const field = targetForm.getTextField(fieldName);
@@ -377,7 +382,9 @@ export default function App() {
   }
 
   async function fillRsePdf() {
-    const datesComplete = (!einbauEnabled || einbauDate) && (!ausbauEnabled || ausbauDate);
+    const datesComplete = einbauEnabled && ausbauEnabled
+      ? Boolean(einbauDate || ausbauDate)
+      : (!einbauEnabled || einbauDate) && (!ausbauEnabled || ausbauDate);
     const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled;
     if (!selectedEditPdf || !hasSelection || !datesComplete || (rseEnabled && (!selectedGroup || !werkNr.trim()))) return;
     setEditBusy(true);
@@ -484,6 +491,7 @@ export default function App() {
             </Pressable>
             {activeDateType && <>
               <Text style={styles.label}>{activeDateType === 'einbau' ? 'Datum für Einbau' : 'Datum für Ausbau'}</Text>
+              {einbauEnabled && ausbauEnabled && <Text style={styles.calendarHint}>Bei Einbau und Ausbau wird das Datum nur bei Ausbau eingetragen.</Text>}
               <MiniCalendar value={activeDateType === 'einbau' ? einbauDate : ausbauDate} onChange={date => {
                 if (activeDateType === 'einbau') setEinbauDate(date);
                 else setAusbauDate(date);
@@ -492,7 +500,7 @@ export default function App() {
             </>}
           </View>
 
-          <Pressable style={[styles.button, styles.primary, (() => { const datesComplete = (!einbauEnabled || einbauDate) && (!ausbauEnabled || ausbauDate); const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled; return !selectedEditPdf || !hasSelection || !datesComplete || (rseEnabled && !werkNr.trim()) || editBusy; })() && styles.disabled]} disabled={(() => { const datesComplete = (!einbauEnabled || einbauDate) && (!ausbauEnabled || ausbauDate); const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled; return !selectedEditPdf || !hasSelection || !datesComplete || (rseEnabled && !werkNr.trim()) || editBusy; })()} onPress={fillRsePdf}>
+          <Pressable style={[styles.button, styles.primary, (() => { const datesComplete = einbauEnabled && ausbauEnabled ? Boolean(einbauDate || ausbauDate) : (!einbauEnabled || einbauDate) && (!ausbauEnabled || ausbauDate); const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled; return !selectedEditPdf || !hasSelection || !datesComplete || (rseEnabled && !werkNr.trim()) || editBusy; })() && styles.disabled]} disabled={(() => { const datesComplete = einbauEnabled && ausbauEnabled ? Boolean(einbauDate || ausbauDate) : (!einbauEnabled || einbauDate) && (!ausbauEnabled || ausbauDate); const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled; return !selectedEditPdf || !hasSelection || !datesComplete || (rseEnabled && !werkNr.trim()) || editBusy; })()} onPress={fillRsePdf}>
             {editBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>PDF erstellen und speichern</Text>}
           </Pressable>
           <Text style={styles.note}>Nach dem Speichern öffnet sich die Vorschau. Die bearbeitete Kopie bleibt im iPhone-Dateien-Ordner „MyPDF-Ausgabe“ gespeichert.</Text>
@@ -558,6 +566,7 @@ const styles = StyleSheet.create({
   dropdownItemText: { color: '#172033', fontSize: 16 },
   input: { minHeight: 50, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, paddingHorizontal: 14, color: '#172033', fontSize: 16, backgroundColor: '#f8fafc' },
   hint: { marginTop: 16, color: '#71809a', fontSize: 13, lineHeight: 19 },
+  calendarHint: { marginBottom: 8, color: '#71809a', fontSize: 13, lineHeight: 18 },
   dateValue: { marginLeft: 'auto', color: '#2457d6', fontSize: 16, fontWeight: '600' },
   calendar: { marginTop: 4, padding: 12, borderRadius: 12, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e1e7f0' },
   calendarHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
