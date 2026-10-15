@@ -1,5 +1,5 @@
 ﻿import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { Directory, File, Paths } from 'expo-file-system';
 import { Asset } from 'expo-asset';
@@ -231,9 +231,39 @@ async function createFilledPdf(sourceUri, outputDirectory) {
   return { filename: `${filename}.pdf`, bytes: outputBytes, filled };
 }
 
+const EEG_GROUPS = Array.from({ length: 12 }, (_, index) => `EEG Gr.${String(index + 1).padStart(2, '0')}`);
+
+async function createRsePdf(group, werkNr) {
+  const template = await Asset.loadAsync(templateAsset);
+  const targetPdf = await PDFDocument.load(await readPdf(template[0].localUri || template[0].uri));
+  const targetForm = targetPdf.getForm();
+  const groupNumber = Number(group.slice(-2));
+  const fields = {
+    'Werk NrRow2': werkNr.trim(),
+    TypRow2: 'LCR 160',
+    CodeRow2: `613/${String(5 + groupNumber).padStart(2, '0')}`,
+    VerwendungsartRow2: group
+  };
+
+  for (const [fieldName, value] of Object.entries(fields)) {
+    const field = targetForm.getTextField(fieldName);
+    field.setText(value);
+    field.setFontSize(FORM_FONT_SIZE);
+  }
+
+  targetForm.acroForm.dict.set(PDFName.of('NeedAppearances'), PDFBool.True);
+  return targetPdf.save();
+}
+
 export default function App() {
   const [selected, setSelected] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [editScreen, setEditScreen] = useState(false);
+  const [rseEnabled, setRseEnabled] = useState(false);
+  const [groupMenuOpen, setGroupMenuOpen] = useState(false);
+  const [selectedGroup, setSelectedGroup] = useState(EEG_GROUPS[0]);
+  const [werkNr, setWerkNr] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
 
   async function choosePdf() {
     const result = await DocumentPicker.getDocumentAsync({
@@ -284,6 +314,75 @@ export default function App() {
     } finally { setBusy(false); }
   }
 
+  async function fillRsePdf() {
+    if (!rseEnabled || !selectedGroup || !werkNr.trim()) return;
+    setEditBusy(true);
+    try {
+      const outputDirectory = new Directory(Paths.document, 'MyPDF-Ausgabe');
+      outputDirectory.create({ idempotent: true, intermediates: true });
+      const outputFile = new File(outputDirectory, `RSE_${selectedGroup.replace(' ', '_')}_${cleanFilenamePart(werkNr)}.pdf`);
+      outputFile.write(await createRsePdf(selectedGroup, werkNr));
+      Alert.alert('Fertig', `${selectedGroup} wurde mit Werk Nr. ${werkNr.trim()} eingetragen.`);
+    } catch (error) {
+      Alert.alert('Fehler', error.message || 'Die PDF konnte nicht bearbeitet werden.');
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
+  if (editScreen) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <ScrollView contentContainerStyle={styles.editContainer}>
+          <Pressable onPress={() => setEditScreen(false)} style={styles.backButton}>
+            <Text style={styles.backText}>‹ Zurück</Text>
+          </Pressable>
+          <Text style={styles.title}>PDF bearbeiten</Text>
+          <Text style={styles.subtitle}>Zählerwechselbeleg gezielt ausfüllen</Text>
+
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Einbauart</Text>
+            <Pressable style={styles.checkboxRow} onPress={() => setRseEnabled(value => !value)}>
+              <View style={[styles.checkbox, rseEnabled && styles.checkboxChecked]}>
+                {rseEnabled && <Text style={styles.checkmark}>✓</Text>}
+              </View>
+              <Text style={styles.checkboxLabel}>RSE Einbau</Text>
+            </Pressable>
+
+            {rseEnabled && <>
+              <Text style={styles.label}>EEG-Gruppe</Text>
+              <Pressable style={styles.dropdown} onPress={() => setGroupMenuOpen(value => !value)}>
+                <Text style={styles.dropdownText}>{selectedGroup}</Text>
+                <Text style={styles.dropdownArrow}>{groupMenuOpen ? '⌃' : '⌄'}</Text>
+              </Pressable>
+              {groupMenuOpen && <View style={styles.dropdownMenu}>
+                {EEG_GROUPS.map(group => <Pressable key={group} style={styles.dropdownItem} onPress={() => { setSelectedGroup(group); setGroupMenuOpen(false); }}>
+                  <Text style={styles.dropdownItemText}>{group}</Text>
+                </Pressable>)}
+              </View>}
+
+              <Text style={styles.label}>Werk Nr.</Text>
+              <TextInput
+                value={werkNr}
+                onChangeText={setWerkNr}
+                placeholder="Werknummer eingeben"
+                placeholderTextColor="#8a96aa"
+                style={styles.input}
+                autoCapitalize="characters"
+              />
+              <Text style={styles.hint}>Typ: LCR 160 · Code: {`613/${String(5 + Number(selectedGroup.slice(-2))).padStart(2, '0')}`} · Verwendungsart: {selectedGroup}</Text>
+            </>}
+          </View>
+
+          <Pressable style={[styles.button, styles.primary, (!rseEnabled || !werkNr.trim() || editBusy) && styles.disabled]} disabled={!rseEnabled || !werkNr.trim() || editBusy} onPress={fillRsePdf}>
+            {editBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>PDF erstellen und speichern</Text>}
+          </Pressable>
+          <Text style={styles.note}>Die bearbeitete Blanko-PDF wird im iPhone-Dateien-Ordner „MyPDF-Ausgabe“ gespeichert.</Text>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
@@ -293,7 +392,10 @@ export default function App() {
         <Pressable style={styles.button} onPress={choosePdf}><Text style={styles.buttonText}>Quellen auswählen</Text></Pressable>
         {selected.length > 0 && <Text style={styles.file}>{selected.length} Quelle{selected.length === 1 ? '' : 'n'} ausgewählt</Text>}
         <Pressable style={[styles.button, styles.primary, (!selected.length || busy) && styles.disabled]} disabled={!selected.length || busy} onPress={fillPdf}>
-          {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>PDFs ausfüllen und speichern</Text>}
+          {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>PDFs ausfüllen und speichern</Text>}
+        </Pressable>
+        <Pressable style={[styles.button, styles.secondary]} onPress={() => setEditScreen(true)}>
+          <Text style={styles.buttonText}>PDF bearbeiten</Text>
         </Pressable>
         <Text style={styles.note}>Die fertigen Dateien werden direkt im iPhone-Dateien-Ordner „MyPDF-Ausgabe“ gespeichert.</Text>
         <Text style={styles.version}>Update Version 1.2</Text>
@@ -312,7 +414,28 @@ const styles = StyleSheet.create({
   primary: { backgroundColor: '#2457d6', marginTop: 12 },
   disabled: { opacity: 0.45 },
   buttonText: { color: '#172033', fontSize: 17, fontWeight: '600' },
+  primaryButtonText: { color: '#fff', fontSize: 17, fontWeight: '600' },
+  secondary: { backgroundColor: '#eef2f8', marginTop: 12, borderWidth: 1, borderColor: '#cbd5e5' },
   file: { marginTop: 14, color: '#2457d6', fontSize: 14 },
   note: { marginTop: 28, color: '#71809a', lineHeight: 20, textAlign: 'center' },
-  version: { position: 'absolute', right: 12, bottom: 8, color: '#9aa5b8', fontSize: 11 }
+  version: { position: 'absolute', right: 12, bottom: 8, color: '#9aa5b8', fontSize: 11 },
+  editContainer: { padding: 24, paddingBottom: 40 },
+  backButton: { alignSelf: 'flex-start', paddingVertical: 8, paddingRight: 18 },
+  backText: { color: '#2457d6', fontSize: 17, fontWeight: '600' },
+  card: { marginTop: 26, padding: 20, borderRadius: 16, backgroundColor: '#fff', shadowColor: '#172033', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
+  sectionTitle: { color: '#172033', fontSize: 19, fontWeight: '700', marginBottom: 18 },
+  checkboxRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
+  checkbox: { width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: '#9aa5b8', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  checkboxChecked: { backgroundColor: '#2457d6', borderColor: '#2457d6' },
+  checkmark: { color: '#fff', fontWeight: '700', fontSize: 17 },
+  checkboxLabel: { color: '#172033', fontSize: 17, fontWeight: '600' },
+  label: { color: '#53627b', fontSize: 14, fontWeight: '600', marginTop: 22, marginBottom: 8 },
+  dropdown: { minHeight: 50, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f8fafc' },
+  dropdownText: { color: '#172033', fontSize: 16 },
+  dropdownArrow: { color: '#53627b', fontSize: 20 },
+  dropdownMenu: { marginTop: 4, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, overflow: 'hidden', backgroundColor: '#fff' },
+  dropdownItem: { paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eef2f8' },
+  dropdownItemText: { color: '#172033', fontSize: 16 },
+  input: { minHeight: 50, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, paddingHorizontal: 14, color: '#172033', fontSize: 16, backgroundColor: '#f8fafc' },
+  hint: { marginTop: 16, color: '#71809a', fontSize: 13, lineHeight: 19 }
 });
