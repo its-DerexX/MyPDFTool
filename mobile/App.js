@@ -4,7 +4,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
 import { Directory, File, Paths } from 'expo-file-system';
 import { Asset } from 'expo-asset';
-import { PDFBool, PDFDocument, PDFName, StandardFonts } from 'pdf-lib';
+import { PDFBool, PDFDocument, PDFName, StandardFonts, rgb } from 'pdf-lib';
 import pako from 'pako/dist/pako.cjs.js';
 import { zipSync } from 'fflate';
 
@@ -288,7 +288,7 @@ function MiniCalendar({ value, onChange }) {
 async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnabled, ausbauEnabled) {
   const targetPdf = await PDFDocument.load(await readPdf(sourceUri));
   const targetForm = targetPdf.getForm();
-  const fields = { F: '', G: '' };
+  const fields = {};
   if (group && werkNr.trim()) {
     const groupNumber = Number(group.slice(-2));
     Object.assign(fields, {
@@ -312,8 +312,19 @@ async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnable
   targetForm.acroForm.dict.set(PDFName.of('NeedAppearances'), PDFBool.True);
   const page = targetPdf.getPages()[0];
   const checkboxFont = await targetPdf.embedFont(StandardFonts.Helvetica);
-  if (einbauEnabled) page.drawText('x', { x: 87.5, y: 594.0, size: 8.5, font: checkboxFont });
-  if (ausbauEnabled) page.drawText('x', { x: 87.5, y: 582.5, size: 8.5, font: checkboxFont });
+  for (const name of ['F', 'G']) {
+    const field = targetForm.getTextField(name);
+    field.setText('');
+    targetForm.removeField(field);
+  }
+  const boxes = [
+    { y: 593.144, selected: einbauEnabled },
+    { y: 581.68, selected: ausbauEnabled }
+  ];
+  for (const box of boxes) {
+    page.drawRectangle({ x: 84.9594, y: box.y, width: 9.6438, height: 10.004, color: rgb(1, 1, 1), borderColor: rgb(0, 0, 0), borderWidth: 0.8 });
+    if (box.selected) page.drawText('x', { x: 87.5, y: box.y + 0.85, size: 8.5, font: checkboxFont });
+  }
   return targetPdf.save();
 }
 
