@@ -4,7 +4,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
 import { Directory, File, Paths } from 'expo-file-system';
 import { Asset } from 'expo-asset';
-import { PDFBool, PDFDocument, PDFName, rgb } from 'pdf-lib';
+import { PDFBool, PDFDocument, PDFName } from 'pdf-lib';
 import pako from 'pako/dist/pako.cjs.js';
 import { zipSync } from 'fflate';
 
@@ -310,14 +310,6 @@ async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnable
   }
 
   targetForm.acroForm.dict.set(PDFName.of('NeedAppearances'), PDFBool.True);
-  const page = targetPdf.getPages()[0];
-  const boxes = [
-    { y: 593.144, selected: einbauEnabled },
-    { y: 581.68, selected: ausbauEnabled }
-  ];
-  for (const box of boxes) {
-    page.drawRectangle({ x: 84.9594, y: box.y, width: 9.6438, height: 10.004, borderColor: rgb(0, 0, 0), borderWidth: 0.8 });
-  }
   return targetPdf.save();
 }
 
