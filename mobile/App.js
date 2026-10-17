@@ -904,7 +904,7 @@ export default function App() {
             <Text style={styles.backText}>‹ Zurück</Text>
           </Pressable>
           <Text style={styles.title}>PDF bearbeiten</Text>
-          <Text style={styles.subtitle}>Zählerwechselbeleg ausfüllen</Text>
+          <Text style={styles.subtitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>Zählerwechselbeleg ausfüllen</Text>
           <Text style={styles.selectedFileTitle}>Ausgewählte PDF</Text>
           <TextInput
             value={selectedEditPdfName}
@@ -1184,7 +1184,7 @@ const styles = StyleSheet.create({
   keyboardAvoiding: { flex: 1 },
   container: { flex: 1, padding: 24, justifyContent: 'center' },
   title: { fontSize: 34, fontWeight: '700', color: '#172033' },
-  subtitle: { fontSize: 21, marginTop: 6, color: '#3d4c68' },
+  subtitle: { fontSize: 19, marginTop: 6, color: '#3d4c68' },
   help: { fontSize: 16, lineHeight: 24, marginTop: 28, color: '#53627b' },
   button: { minHeight: 54, borderRadius: 12, backgroundColor: '#dce4f2', alignItems: 'center', justifyContent: 'center', marginTop: 24 },
   primary: { backgroundColor: '#2457d6', marginTop: 12 },
