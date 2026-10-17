@@ -776,7 +776,7 @@ export default function App() {
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Auswahl</Text>
+            <Text style={styles.sectionTitle}>Grund:</Text>
             <View style={styles.checkboxGrid}>
             <Pressable style={styles.checkboxGridItem} onPress={() => setEinbauEnabled(value => !value)}>
               <View style={[styles.checkbox, einbauEnabled && styles.checkboxChecked]}>{einbauEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
@@ -799,18 +799,6 @@ export default function App() {
                 {rseEnabled && <Text style={styles.checkmark}>✓</Text>}
               </View>
               <Text style={styles.checkboxLabel}>RSE</Text>
-            </Pressable>
-            <Pressable style={styles.checkboxGridItem} onPress={() => setWpEnabled(value => !value)}>
-              <View style={[styles.checkbox, wpEnabled && styles.checkboxChecked]}>{wpEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
-              <Text style={styles.checkboxLabel}>WP</Text>
-            </Pressable>
-            <Pressable style={styles.checkboxGridItem} onPress={() => setPvEnabled(value => !value)}>
-              <View style={[styles.checkbox, pvEnabled && styles.checkboxChecked]}>{pvEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
-              <Text style={styles.checkboxLabel}>PV</Text>
-            </Pressable>
-            <Pressable style={styles.checkboxGridItem} onPress={() => setHaushaltEnabled(value => !value)}>
-              <View style={[styles.checkbox, haushaltEnabled && styles.checkboxChecked]}>{haushaltEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
-              <Text style={styles.checkboxLabel}>Haushalt</Text>
             </Pressable>
             </View>
 
@@ -910,6 +898,24 @@ export default function App() {
                 </Pressable>)}
               </View>
             </>}
+          </View>
+
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Kundengruppe:</Text>
+            <View style={styles.checkboxGrid}>
+              <Pressable style={styles.checkboxGridItem} onPress={() => setWpEnabled(value => !value)}>
+                <View style={[styles.checkbox, wpEnabled && styles.checkboxChecked]}>{wpEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
+                <Text style={styles.checkboxLabel}>WP</Text>
+              </Pressable>
+              <Pressable style={styles.checkboxGridItem} onPress={() => setPvEnabled(value => !value)}>
+                <View style={[styles.checkbox, pvEnabled && styles.checkboxChecked]}>{pvEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
+                <Text style={styles.checkboxLabel}>PV</Text>
+              </Pressable>
+              <Pressable style={styles.checkboxGridItem} onPress={() => setHaushaltEnabled(value => !value)}>
+                <View style={[styles.checkbox, haushaltEnabled && styles.checkboxChecked]}>{haushaltEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
+                <Text style={styles.checkboxLabel}>Haushalt</Text>
+              </Pressable>
+            </View>
           </View>
 
           <Pressable style={[styles.button, styles.primary, (() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wpEnabled || pvEnabled || haushaltEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || (rseEnabled && !werkNr.trim()) || editBusy; })() && styles.disabled]} disabled={(() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wpEnabled || pvEnabled || haushaltEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || (rseEnabled && !werkNr.trim()) || editBusy; })()} onPress={fillRsePdf}>
