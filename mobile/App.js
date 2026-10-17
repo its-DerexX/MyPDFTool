@@ -830,73 +830,84 @@ export default function App() {
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Werknummern</Text>
             <Text style={styles.sectionHint}>Für SZE, SZA, SZW und ZLG können Ausbau und Einbau unabhängig erfasst werden.</Text>
-            <Text style={styles.label}>Werk Nr. Ausbau</Text>
-            <View style={styles.scannerInputRow}>
-              <TextInput value={ausbauWerkNr} onChangeText={setAusbauWerkNr} placeholder="Werknummer eingeben oder scannen" placeholderTextColor="#8a96aa" style={[styles.input, styles.scannerInput]} autoCapitalize="characters" />
-              <Pressable style={styles.scanButton} onPress={() => openScanner('ausbau')}><Text style={styles.scanButtonText}>Scannen</Text></Pressable>
+            <View style={[styles.subsectionCard, styles.subsectionAusbau]}>
+              <Text style={[styles.subsectionTitle, styles.subsectionTitleAusbau]}>Ausbau</Text>
+              <Text style={styles.label}>Werk Nr. Ausbau</Text>
+              <View style={styles.scannerInputRow}>
+                <TextInput value={ausbauWerkNr} onChangeText={setAusbauWerkNr} placeholder="Werknummer eingeben oder scannen" placeholderTextColor="#8a96aa" style={[styles.input, styles.scannerInput]} autoCapitalize="characters" />
+                <Pressable style={styles.scanButton} onPress={() => openScanner('ausbau')}><Text style={styles.scanButtonText}>Scannen</Text></Pressable>
+              </View>
+              {ausbauWerkNr.trim() && <>
+                <Text style={styles.label}>Ausbauart</Text>
+                <View style={styles.szaTypeRow}>
+                  {SZA_TYPES.map(type => <Pressable key={type} style={[styles.gatewayTypeButton, szaType === type && styles.gatewayTypeButtonSelected]} onPress={() => setSzaType(type)}>
+                    <Text style={[styles.gatewayTypeText, szaType === type && styles.gatewayTypeTextSelected]}>{type}</Text>
+                  </Pressable>)}
+                </View>
+                <View style={styles.szaStandGrid}>
+                  {(SZA_STAND_FIELDS[szaType] || []).map(standField => <View key={standField.field} style={styles.szaStandItem}>
+                    {standField.label ? <Text style={styles.szaStandLabel}>{standField.label}</Text> : null}
+                    <TextInput
+                      value={szaStandValues[standField.field] || ''}
+                      onChangeText={value => setSzaStandValues(current => ({ ...current, [standField.field]: szaType === 'ALT' ? value.replace(/[^0-9,]/g, '') : value.replace(/[^0-9]/g, '') }))}
+                      placeholder={standField.label ? 'Stand eingeben' : 'Stand eingeben'}
+                      placeholderTextColor="#8a96aa"
+                      style={styles.szaStandInput}
+                      keyboardType={szaType === 'ALT' ? 'decimal-pad' : 'numeric'}
+                      inputMode={szaType === 'ALT' ? 'decimal' : 'numeric'}
+                    />
+                  </View>)}
+                </View>
+              </>}
             </View>
-            {ausbauWerkNr.trim() && <>
-              <Text style={styles.label}>Ausbauart</Text>
-              <View style={styles.szaTypeRow}>
-                {SZA_TYPES.map(type => <Pressable key={type} style={[styles.gatewayTypeButton, szaType === type && styles.gatewayTypeButtonSelected]} onPress={() => setSzaType(type)}>
-                  <Text style={[styles.gatewayTypeText, szaType === type && styles.gatewayTypeTextSelected]}>{type}</Text>
-                </Pressable>)}
+
+            <View style={[styles.subsectionCard, styles.subsectionEinbau]}>
+              <Text style={[styles.subsectionTitle, styles.subsectionTitleEinbau]}>Einbau</Text>
+              <Text style={styles.label}>Werk Nr. Einbau</Text>
+              <View style={styles.scannerInputRow}>
+                <TextInput value={einbauWerkNr} onChangeText={setEinbauWerkNr} placeholder="Werknummer eingeben oder scannen" placeholderTextColor="#8a96aa" style={[styles.input, styles.scannerInput]} autoCapitalize="characters" />
+                <Pressable style={styles.scanButton} onPress={() => openScanner('einbau')}><Text style={styles.scanButtonText}>Scannen</Text></Pressable>
               </View>
-              <View style={styles.szaStandGrid}>
-                {(SZA_STAND_FIELDS[szaType] || []).map(standField => <View key={standField.field} style={styles.szaStandItem}>
-                  {standField.label ? <Text style={styles.szaStandLabel}>{standField.label}</Text> : null}
-                  <TextInput
-                    value={szaStandValues[standField.field] || ''}
-                    onChangeText={value => setSzaStandValues(current => ({ ...current, [standField.field]: szaType === 'ALT' ? value.replace(/[^0-9,]/g, '') : value.replace(/[^0-9]/g, '') }))}
-                    placeholder={standField.label ? 'Stand eingeben' : 'Stand eingeben'}
-                    placeholderTextColor="#8a96aa"
-                    style={styles.szaStandInput}
-                    keyboardType={szaType === 'ALT' ? 'decimal-pad' : 'numeric'}
-                    inputMode={szaType === 'ALT' ? 'decimal' : 'numeric'}
-                  />
-                </View>)}
-              </View>
-            </>}
-            <Text style={styles.label}>Werk Nr. Einbau</Text>
-            <View style={styles.scannerInputRow}>
-              <TextInput value={einbauWerkNr} onChangeText={setEinbauWerkNr} placeholder="Werknummer eingeben oder scannen" placeholderTextColor="#8a96aa" style={[styles.input, styles.scannerInput]} autoCapitalize="characters" />
-              <Pressable style={styles.scanButton} onPress={() => openScanner('einbau')}><Text style={styles.scanButtonText}>Scannen</Text></Pressable>
+              {einbauWerkNr.trim() && <>
+                <Text style={styles.label}>Einbauart</Text>
+                <View style={styles.szaTypeRow}>
+                  {SZE_TYPES.map(type => <Pressable key={type} style={[styles.gatewayTypeButton, szeType === type && styles.gatewayTypeButtonSelected]} onPress={() => setSzeType(type)}>
+                    <Text style={[styles.gatewayTypeText, szeType === type && styles.gatewayTypeTextSelected]}>{type}</Text>
+                  </Pressable>)}
+                </View>
+                <View style={styles.szaStandGrid}>
+                  {(SZE_STAND_FIELDS[szeType] || []).map(standField => <View key={standField.field} style={styles.szaStandItem}>
+                    <Text style={styles.szaStandLabel}>{standField.label}</Text>
+                    <TextInput
+                      value={szeStandValues[standField.field] || ''}
+                      onChangeText={value => setSzeStandValues(current => ({ ...current, [standField.field]: value.replace(/[^0-9]/g, '') }))}
+                      placeholder="Stand eingeben"
+                      placeholderTextColor="#8a96aa"
+                      style={styles.szaStandInput}
+                      keyboardType="numeric"
+                      inputMode="numeric"
+                    />
+                  </View>)}
+                </View>
+              </>}
             </View>
-            {einbauWerkNr.trim() && <>
-              <Text style={styles.label}>Einbauart</Text>
-              <View style={styles.szaTypeRow}>
-                {SZE_TYPES.map(type => <Pressable key={type} style={[styles.gatewayTypeButton, szeType === type && styles.gatewayTypeButtonSelected]} onPress={() => setSzeType(type)}>
-                  <Text style={[styles.gatewayTypeText, szeType === type && styles.gatewayTypeTextSelected]}>{type}</Text>
-                </Pressable>)}
+
+            <View style={[styles.subsectionCard, styles.subsectionGateway]}>
+              <Text style={[styles.subsectionTitle, styles.subsectionTitleGateway]}>Gateway</Text>
+              <Text style={styles.label}>Werk Nr. Gateway (optional)</Text>
+              <View style={styles.scannerInputRow}>
+                <TextInput value={gatewayWerkNr} onChangeText={setGatewayWerkNr} placeholder="Werknummer eingeben oder QR scannen" placeholderTextColor="#8a96aa" style={[styles.input, styles.scannerInput]} autoCapitalize="characters" />
+                <Pressable style={styles.scanButton} onPress={() => openScanner('gateway')}><Text style={styles.scanButtonText}>Scannen</Text></Pressable>
               </View>
-              <View style={styles.szaStandGrid}>
-                {(SZE_STAND_FIELDS[szeType] || []).map(standField => <View key={standField.field} style={styles.szaStandItem}>
-                  <Text style={styles.szaStandLabel}>{standField.label}</Text>
-                  <TextInput
-                    value={szeStandValues[standField.field] || ''}
-                    onChangeText={value => setSzeStandValues(current => ({ ...current, [standField.field]: value.replace(/[^0-9]/g, '') }))}
-                    placeholder="Stand eingeben"
-                    placeholderTextColor="#8a96aa"
-                    style={styles.szaStandInput}
-                    keyboardType="numeric"
-                    inputMode="numeric"
-                  />
-                </View>)}
-              </View>
-            </>}
-            <Text style={styles.label}>Werk Nr. Gateway (optional)</Text>
-            <View style={styles.scannerInputRow}>
-              <TextInput value={gatewayWerkNr} onChangeText={setGatewayWerkNr} placeholder="Werknummer eingeben oder QR scannen" placeholderTextColor="#8a96aa" style={[styles.input, styles.scannerInput]} autoCapitalize="characters" />
-              <Pressable style={styles.scanButton} onPress={() => openScanner('gateway')}><Text style={styles.scanButtonText}>Scannen</Text></Pressable>
+              {gatewayWerkNr.trim() && <>
+                <Text style={styles.label}>Übertragung Gateway</Text>
+                <View style={styles.gatewayTypeRow}>
+                  {['Draht', 'Funk'].map(type => <Pressable key={type} style={[styles.gatewayTypeButton, gatewayType === type && styles.gatewayTypeButtonSelected]} onPress={() => setGatewayType(type)}>
+                    <Text style={[styles.gatewayTypeText, gatewayType === type && styles.gatewayTypeTextSelected]}>{type}</Text>
+                  </Pressable>)}
+                </View>
+              </>}
             </View>
-            {gatewayWerkNr.trim() && <>
-              <Text style={styles.label}>Übertragung Gateway</Text>
-              <View style={styles.gatewayTypeRow}>
-                {['Draht', 'Funk'].map(type => <Pressable key={type} style={[styles.gatewayTypeButton, gatewayType === type && styles.gatewayTypeButtonSelected]} onPress={() => setGatewayType(type)}>
-                  <Text style={[styles.gatewayTypeText, gatewayType === type && styles.gatewayTypeTextSelected]}>{type}</Text>
-                </Pressable>)}
-              </View>
-            </>}
           </View>
 
           <View style={styles.card}>
@@ -968,6 +979,14 @@ const styles = StyleSheet.create({
   backButton: { alignSelf: 'flex-start', paddingVertical: 8, paddingRight: 18 },
   backText: { color: '#2457d6', fontSize: 17, fontWeight: '600' },
   card: { marginTop: 26, padding: 20, borderRadius: 16, backgroundColor: '#fff', shadowColor: '#172033', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
+  subsectionCard: { marginTop: 16, padding: 14, borderRadius: 12, borderWidth: 1 },
+  subsectionAusbau: { backgroundColor: '#f2f6ff', borderColor: '#c3d2f4' },
+  subsectionEinbau: { backgroundColor: '#f1fbf6', borderColor: '#bfe3cd' },
+  subsectionGateway: { backgroundColor: '#f7f9fc', borderColor: '#dbe3ef' },
+  subsectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 2 },
+  subsectionTitleAusbau: { color: '#2457d6' },
+  subsectionTitleEinbau: { color: '#198754' },
+  subsectionTitleGateway: { color: '#53627b' },
   sectionTitle: { color: '#172033', fontSize: 19, fontWeight: '700', marginBottom: 18 },
   sectionHint: { color: '#71809a', fontSize: 13, lineHeight: 19, marginTop: -8 },
   checkboxRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
