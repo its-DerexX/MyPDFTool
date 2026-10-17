@@ -500,8 +500,8 @@ async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnable
   }
   if (ausbauWerkNr.trim()) {
     for (const standField of SZA_STAND_FIELDS[szaType] || []) {
-      fields[standField.marker] = 'x';
-      fields[standField.field] = String(szaStandValues?.[standField.field] || '').trim();
+      fields[standField.marker] = String(szaStandValues?.[standField.field] || '').trim();
+      fields[standField.field] = standField.label;
     }
   }
   if (group && werkNr.trim()) {
