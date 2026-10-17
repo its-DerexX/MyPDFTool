@@ -23,7 +23,8 @@ const templateAsset = require('./assets/blanko.pdf');
 const FORM_FONT_SIZE = 9.268;
 const GATEWAY_2D_CODE_TYPES = ['qr', 'datamatrix', 'aztec', 'pdf417'];
 const WORK_NUMBER_BARCODE_TYPES = ['ean13', 'ean8', 'code128', 'code39', 'itf14', 'upc_a', 'upc_e'];
-const DEFAULT_REMARK_PRESETS = ['Keine Besonderheiten', 'Kunde informiert', 'Zugang nicht möglich'];
+const DEFAULT_REMARK_PRESETS = ['Antenne außen', 'Antenne innen (Unterputzschrank)', 'iMSys RSE nachgerüstet', 'Kaskade Z1', 'Kaskade Z2'].sort((a, b) => a.localeCompare(b, 'de', { sensitivity: 'base' }));
+const LEGACY_REMARK_PRESETS = new Set(['Keine Besonderheiten', 'Kunde informiert', 'Zugang nicht möglich']);
 const REMARK_PRESETS_FILE = new File(Paths.document, 'MyPDFTool-Bemerkungsvorlagen.json');
 
 async function readPdf(uri) {
@@ -742,7 +743,10 @@ export default function App() {
       try {
         if (REMARK_PRESETS_FILE.exists) {
           const savedPresets = JSON.parse(await REMARK_PRESETS_FILE.text());
-          if (Array.isArray(savedPresets) && savedPresets.length) setRemarkPresets(savedPresets.filter(value => typeof value === 'string' && value.trim()));
+          if (Array.isArray(savedPresets) && savedPresets.length) {
+            const customPresets = savedPresets.filter(value => typeof value === 'string' && value.trim() && !LEGACY_REMARK_PRESETS.has(value.trim()));
+            setRemarkPresets([...new Set([...DEFAULT_REMARK_PRESETS, ...customPresets])].sort((a, b) => a.localeCompare(b, 'de', { sensitivity: 'base' })));
+          }
         }
       } catch (_) {}
       const detectedGroup = inferEegGroupFromFilename(selectedAsset.name || selectedAsset.uri || '');
@@ -783,7 +787,7 @@ export default function App() {
   async function saveRemarkPreset() {
     const value = newRemarkPreset.trim();
     if (!value) return;
-    const nextPresets = [...new Set([...remarkPresets, value])];
+    const nextPresets = [...new Set([...remarkPresets, value])].sort((a, b) => a.localeCompare(b, 'de', { sensitivity: 'base' }));
     setRemarkPresets(nextPresets);
     setBemerkungen(value);
     setNewRemarkPreset('');
@@ -1016,8 +1020,8 @@ export default function App() {
               textAlignVertical="top"
             />
             <Pressable style={styles.remarkPresetToggle} onPress={() => setRemarkMenuOpen(open => !open)}>
-              <Text style={styles.remarkPresetToggleText}>Vorgefertigte Bemerkung auswählen</Text>
-              <Text style={styles.dropdownArrow}>{remarkMenuOpen ? '⌃' : '⌄'}</Text>
+              <Text style={styles.remarkPresetToggleText}>Bemerkung auswählen</Text>
+              <View style={styles.remarkPresetArrow}><Text style={styles.remarkPresetArrowText}>{remarkMenuOpen ? '⌃' : '⌄'}</Text></View>
             </Pressable>
             {remarkMenuOpen && <View style={styles.remarkPresetMenu}>
               {remarkPresets.map(preset => <Pressable key={preset} style={styles.remarkPresetItem} onPress={() => { setBemerkungen(preset); setRemarkMenuOpen(false); }}>
@@ -1087,8 +1091,10 @@ const styles = StyleSheet.create({
   selectedFileName: { marginTop: 4, color: '#172033', fontSize: 16, fontWeight: '600' },
   note: { marginTop: 28, color: '#71809a', lineHeight: 20, textAlign: 'center' },
   remarksInput: { minHeight: 78, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, color: '#172033', fontSize: 16, backgroundColor: '#f8fafc' },
-  remarkPresetToggle: { marginTop: 10, minHeight: 46, paddingHorizontal: 12, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, backgroundColor: '#eef2f8', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  remarkPresetToggleText: { color: '#172033', fontSize: 15, fontWeight: '600' },
+  remarkPresetToggle: { marginTop: 10, minHeight: 48, paddingHorizontal: 12, borderWidth: 1, borderColor: '#2457d6', borderRadius: 10, backgroundColor: '#2457d6', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  remarkPresetToggleText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  remarkPresetArrow: { width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
+  remarkPresetArrowText: { color: '#fff', fontSize: 18, lineHeight: 20 },
   remarkPresetMenu: { marginTop: 4, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, overflow: 'hidden', backgroundColor: '#fff' },
   remarkPresetItem: { paddingHorizontal: 12, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: '#eef2f8' },
   remarkPresetText: { color: '#172033', fontSize: 15 },
