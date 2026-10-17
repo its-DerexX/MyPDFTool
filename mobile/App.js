@@ -5,7 +5,22 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Sharing from 'expo-sharing';
 import { Directory, File, Paths } from 'expo-file-system';
 import { Asset } from 'expo-asset';
-import { PDFBool, PDFDocument, PDFName, PDFString } from 'pdf-lib';
+import {
+  PDFBool,
+  PDFDocument,
+  PDFHexString,
+  PDFName,
+  PDFNumber,
+  PDFString,
+  StandardFonts,
+  beginText,
+  endText,
+  popGraphicsState,
+  pushGraphicsState,
+  setFontAndSize,
+  setTextMatrix,
+  showText
+} from 'pdf-lib';
 import pako from 'pako/dist/pako.cjs.js';
 import { zipSync } from 'fflate';
 
@@ -291,30 +306,116 @@ function MiniCalendar({ value, onChange }) {
   );
 }
 
-function updateGatewayAnnotation(targetPdf, gatewayWerkNr, gatewayType) {
+function escapePdfLiteral(value) {
+  return String(value || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)')
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n');
+}
+
+function asciiHex(value) {
+  return Array.from(String(value || ''), character => character.charCodeAt(0).toString(16).padStart(2, '0')).join('');
+}
+
+function replaceAppearanceText(targetPdf, field, value) {
+  field.acroField.dict.set(PDFName.of('V'), PDFString.of(value));
+  const widgets = field.acroField.getWidgets();
+
+  for (const widget of widgets) {
+    const appearanceEntry = widget.dict.get(PDFName.of('AP'));
+    const appearance = appearanceEntry && targetPdf.context.lookup(appearanceEntry);
+    const normalEntry = appearance?.get(PDFName.of('N'));
+    const normal = normalEntry && targetPdf.context.lookup(normalEntry);
+    if (!normal?.getContents || !normal.dict) continue;
+
+    const contents = String.fromCharCode(...normal.getContents());
+    const updatedContents = contents.replace(/\((?:\\.|[^\\)])*\)\s*Tj/, `(${escapePdfLiteral(value)}) Tj`);
+    if (updatedContents === contents) continue;
+
+    const streamDict = normal.dict.clone(targetPdf.context);
+    streamDict.set(PDFName.of('Length'), PDFNumber.of(updatedContents.length));
+    const updatedStream = targetPdf.context.stream(updatedContents, streamDict);
+    appearance.set(PDFName.of('N'), targetPdf.context.register(updatedStream));
+  }
+}
+
+async function updateGatewayAnnotation(targetPdf, gatewayWerkNr, gatewayType) {
   const gateway = normalizeGatewayWerkNr(gatewayWerkNr);
   if (!gateway) return;
-  const type = gatewayType === 'Draht' ? 'Draht' : 'Funk';
-  const contentsName = PDFName.of('Contents');
-  const subtypeName = PDFName.of('Subtype');
-  const appearanceName = PDFName.of('AP');
 
-  for (const page of targetPdf.getPages()) {
-    const rawAnnots = page.node.get(PDFName.of('Annots'));
-    const annots = rawAnnots && targetPdf.context.lookup(rawAnnots);
-    if (!annots?.asArray) continue;
+  const type = gatewayType === 'Draht' ? 'Draht' : 'Funk';
+  const text = `SMGW ${gateway} ${type}`;
+  const page = targetPdf.getPages()[0];
+  const context = targetPdf.context;
+  const subtypeName = PDFName.of('Subtype');
+  const contentsName = PDFName.of('Contents');
+  const annotationRect = { x: 83.25, y: 419.67, height: 17.25 };
+  const font = await targetPdf.embedFont(StandardFonts.Helvetica);
+  const width = Math.max(220.5, font.widthOfTextAtSize(text, 15) + 8);
+  const rect = context.obj([
+    annotationRect.x,
+    annotationRect.y,
+    annotationRect.x + width,
+    annotationRect.y + annotationRect.height
+  ]);
+  const appearance = context.formXObject([
+    pushGraphicsState(),
+    beginText(),
+    setFontAndSize('F1', 15),
+    setTextMatrix(1, 0, 0, 1, 0, 1.5),
+    showText(PDFHexString.of(asciiHex(text))),
+    endText(),
+    popGraphicsState()
+  ], {
+    BBox: [0, 0, width, annotationRect.height],
+    Matrix: [1, 0, 0, 1, 0, 0],
+    Resources: { Font: { F1: font.ref } }
+  });
+  const appearanceRef = context.register(appearance);
+  let annotationToUpdate = null;
+
+  const rawAnnots = page.node.get(PDFName.of('Annots'));
+  const annots = rawAnnots && context.lookup(rawAnnots);
+  if (annots?.asArray) {
     for (const ref of annots.asArray()) {
-      const annotation = targetPdf.context.lookup(ref);
+      const annotation = context.lookup(ref);
       if (!annotation?.get || annotation.get(subtypeName)?.toString() !== '/FreeText') continue;
       const contents = annotation.get(contentsName);
-      const text = contents?.decodeText ? contents.decodeText() : '';
-      const match = text.match(/^(SMGW\s+)\S+(\s+(?:Draht|Funk))$/i);
-      if (!match) continue;
-      annotation.set(contentsName, PDFString.of(`${match[1]}${gateway} ${type}`));
-      // The old appearance contains the previous gateway number. Removing it
-      // lets the PDF viewer render the updated FreeText annotation contents.
-      annotation.delete(appearanceName);
+      const currentText = contents?.decodeText ? contents.decodeText() : '';
+      if (/^SMGW\s+/i.test(currentText)) {
+        annotationToUpdate = annotation;
+        break;
+      }
     }
+  }
+
+  if (!annotationToUpdate) {
+    annotationToUpdate = context.obj({
+      Type: PDFName.of('Annot'),
+      Subtype: PDFName.of('FreeText'),
+      P: page.ref,
+      F: PDFNumber.of(4),
+      Contents: PDFString.of(text),
+      CA: PDFNumber.of(1),
+      IT: PDFName.of('FreeTextTypewriter'),
+      BS: context.obj({ Type: PDFName.of('Border'), W: PDFNumber.of(0), S: PDFName.of('S') }),
+      Rotate: PDFNumber.of(0),
+      DA: PDFString.of('/F1 15 Tf 0 0 0 rg 0 0 0 RG '),
+      AP: context.obj({ N: appearanceRef }),
+      Rect: rect,
+      C: context.obj([0, 0, 0])
+    });
+    const annotationRef = context.register(annotationToUpdate);
+    const annotationArray = annots?.asArray ? annots : context.obj([]);
+    annotationArray.push(annotationRef);
+    page.node.set(PDFName.of('Annots'), annotationArray);
+  } else {
+    annotationToUpdate.set(contentsName, PDFString.of(text));
+    annotationToUpdate.set(PDFName.of('Rect'), rect);
+    annotationToUpdate.set(PDFName.of('DA'), PDFString.of('/F1 15 Tf 0 0 0 rg 0 0 0 RG '));
+    annotationToUpdate.set(PDFName.of('AP'), context.obj({ N: appearanceRef }));
   }
 }
 
@@ -346,14 +447,12 @@ async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnable
   }
 
   for (const [fieldName, value] of Object.entries(fields)) {
-    const field = targetForm.getTextField(fieldName);
-    field.setText(value);
-    field.setFontSize(FORM_FONT_SIZE);
+    replaceAppearanceText(targetPdf, targetForm.getTextField(fieldName), value);
   }
 
-  updateGatewayAnnotation(targetPdf, gatewayWerkNr, gatewayType);
+  await updateGatewayAnnotation(targetPdf, gatewayWerkNr, gatewayType);
 
-  targetForm.acroForm.dict.set(PDFName.of('NeedAppearances'), PDFBool.True);
+  targetForm.acroForm.dict.set(PDFName.of('NeedAppearances'), PDFBool.False);
   return targetPdf.save();
 }
 
@@ -370,6 +469,7 @@ export default function App() {
   const [ausbauWerkNr, setAusbauWerkNr] = useState('');
   const [gatewayWerkNr, setGatewayWerkNr] = useState('');
   const [gatewayType, setGatewayType] = useState('Funk');
+  const [gatewayTypeMenuOpen, setGatewayTypeMenuOpen] = useState(false);
   const [editBusy, setEditBusy] = useState(false);
   const [einbauEnabled, setEinbauEnabled] = useState(false);
   const [ausbauEnabled, setAusbauEnabled] = useState(false);
@@ -404,6 +504,7 @@ export default function App() {
         return;
       }
       setGatewayWerkNr(gateway);
+      setGatewayTypeMenuOpen(true);
     }
     setScannerTarget(null);
   }
@@ -505,6 +606,7 @@ export default function App() {
       setAusbauWerkNr('');
       setGatewayWerkNr('');
       setGatewayType('Funk');
+      setGatewayTypeMenuOpen(false);
       setWpEnabled(false);
       setPvEnabled(false);
       setHaushaltEnabled(false);
@@ -644,14 +746,15 @@ export default function App() {
             </View>
             {gatewayWerkNr.trim() && <>
               <Text style={styles.label}>Übertragung Gateway</Text>
-              <View style={styles.gatewayTypeRow}>
-                <Pressable style={[styles.gatewayTypeButton, gatewayType === 'Draht' && styles.gatewayTypeButtonSelected]} onPress={() => setGatewayType('Draht')}>
-                  <Text style={[styles.gatewayTypeText, gatewayType === 'Draht' && styles.gatewayTypeTextSelected]}>Draht</Text>
-                </Pressable>
-                <Pressable style={[styles.gatewayTypeButton, gatewayType === 'Funk' && styles.gatewayTypeButtonSelected]} onPress={() => setGatewayType('Funk')}>
-                  <Text style={[styles.gatewayTypeText, gatewayType === 'Funk' && styles.gatewayTypeTextSelected]}>Funk</Text>
-                </Pressable>
-              </View>
+              <Pressable style={styles.dropdown} onPress={() => setGatewayTypeMenuOpen(value => !value)}>
+                <Text style={styles.dropdownText}>{gatewayType}</Text>
+                <Text style={styles.dropdownArrow}>{gatewayTypeMenuOpen ? '⌃' : '⌄'}</Text>
+              </Pressable>
+              {gatewayTypeMenuOpen && <View style={styles.dropdownMenu}>
+                {['Funk', 'Draht'].map(type => <Pressable key={type} style={styles.dropdownItem} onPress={() => { setGatewayType(type); setGatewayTypeMenuOpen(false); }}>
+                  <Text style={[styles.dropdownItemText, gatewayType === type && styles.dropdownItemTextSelected]}>{type}</Text>
+                </Pressable>)}
+              </View>}
             </>}
           </View>
 
@@ -722,6 +825,7 @@ const styles = StyleSheet.create({
   dropdownMenu: { marginTop: 4, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, overflow: 'hidden', backgroundColor: '#fff' },
   dropdownItem: { paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eef2f8' },
   dropdownItemText: { color: '#172033', fontSize: 16 },
+  dropdownItemTextSelected: { color: '#2457d6', fontWeight: '700' },
   input: { minHeight: 50, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, paddingHorizontal: 14, color: '#172033', fontSize: 16, backgroundColor: '#f8fafc' },
   scannerInputRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   scannerInput: { flex: 1, paddingHorizontal: 10 },
