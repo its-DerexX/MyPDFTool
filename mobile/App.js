@@ -904,7 +904,7 @@ export default function App() {
             <Text style={styles.backText}>‹ Zurück</Text>
           </Pressable>
           <Text style={styles.title}>PDF bearbeiten</Text>
-          <Text style={styles.subtitle}>Zählerwechselbeleg gezielt ausfüllen</Text>
+          <Text style={styles.subtitle}>Zählerwechselbeleg ausfüllen</Text>
           <Text style={styles.selectedFileTitle}>Ausgewählte PDF</Text>
           <TextInput
             value={selectedEditPdfName}
@@ -923,7 +923,7 @@ export default function App() {
           />
 
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Datum</Text>
+            <Text style={[styles.sectionTitle, styles.compactSectionTitle]}>Datum:</Text>
             <Pressable style={styles.dateButton} onPress={() => setCalendarOpen(open => !open)}>
               <Text style={styles.dateButtonText}>{selectedDate ? `Datum: ${formatPdfDate(selectedDate)}` : 'Datum auswählen'}</Text>
               <Text style={styles.dropdownArrow}>{calendarOpen ? '⌃' : '⌄'}</Text>
@@ -1225,6 +1225,7 @@ const styles = StyleSheet.create({
   subsectionTitleEinbau: { color: '#198754' },
   subsectionTitleGateway: { color: '#53627b' },
   sectionTitle: { color: '#172033', fontSize: 19, fontWeight: '700', marginBottom: 18 },
+  compactSectionTitle: { marginBottom: 4 },
   sectionHint: { color: '#71809a', fontSize: 13, lineHeight: 19, marginTop: -8 },
   checkboxRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
   checkbox: { width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: '#9aa5b8', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
@@ -1273,7 +1274,7 @@ const styles = StyleSheet.create({
   hint: { marginTop: 16, color: '#71809a', fontSize: 13, lineHeight: 19 },
   autoGroupHint: { marginTop: 8, color: '#2457d6', fontSize: 13, fontWeight: '600' },
   dateValue: { marginLeft: 'auto', color: '#2457d6', fontSize: 16, fontWeight: '600' },
-  dateButton: { minHeight: 50, marginTop: 14, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f8fafc' },
+  dateButton: { minHeight: 50, marginTop: 0, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f8fafc' },
   dateButtonText: { color: '#172033', fontSize: 16 },
   calendar: { marginTop: 4, padding: 12, borderRadius: 12, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e1e7f0' },
   calendarHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
