@@ -772,7 +772,6 @@ export default function App() {
               <Text style={styles.dropdownArrow}>{calendarOpen ? '⌃' : '⌄'}</Text>
             </Pressable>
             {calendarOpen && <MiniCalendar value={selectedDate} onChange={date => { setSelectedDate(date); setCalendarOpen(false); }} />}
-            {(einbauEnabled || ausbauEnabled || szwEnabled) && <Text style={styles.calendarHint}>Das Datum wird gemäß der Auswahl eingetragen. Bei SZW gilt SZA.</Text>}
           </View>
 
           <View style={styles.card}>
@@ -1017,7 +1016,6 @@ const styles = StyleSheet.create({
   scannerCloseButton: { position: 'absolute', bottom: 42, left: 24, right: 24, minHeight: 52, borderRadius: 12, backgroundColor: '#2457d6', alignItems: 'center', justifyContent: 'center' },
   hint: { marginTop: 16, color: '#71809a', fontSize: 13, lineHeight: 19 },
   autoGroupHint: { marginTop: 8, color: '#2457d6', fontSize: 13, fontWeight: '600' },
-  calendarHint: { marginBottom: 8, color: '#71809a', fontSize: 13, lineHeight: 18 },
   dateValue: { marginLeft: 'auto', color: '#2457d6', fontSize: 16, fontWeight: '600' },
   dateButton: { minHeight: 50, marginTop: 14, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f8fafc' },
   dateButtonText: { color: '#172033', fontSize: 16 },
