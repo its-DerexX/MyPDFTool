@@ -258,6 +258,14 @@ const SZA_STAND_FIELDS = {
   ],
   ALT: [{ field: 'htzst1', marker: 'zst1', label: '' }]
 };
+const SZE_TYPES = ['DS', 'ZRZ'];
+const SZE_STAND_FIELDS = {
+  DS: [{ field: 'htzst6', marker: 'zst6', label: '1.8.0' }],
+  ZRZ: [
+    { field: 'htzst6', marker: 'zst6', label: '1.8.0' },
+    { field: 'htzst7', marker: 'zst7', label: '2.8.0' }
+  ]
+};
 const EEG_LOCATION_GROUPS = [
   ['EEG Gr.01', ['Kirchbracht', 'Lichenroth', 'Oberreichenbach', 'Völzberg', 'Wettges', 'Radmühl']],
   ['EEG Gr.02', ['Birstein', 'Bösgesäß', 'Böß-Gesäß', 'Bös-Gesäß', 'Fischborn', 'Hettersroth', 'Illnhausen', 'Mauswinkel', 'Obersotzbach', 'Unterreichenbach', 'Untersotzbach', 'Wüstwillenroth', 'Hellstein', 'Schlierbach', 'Udenhain', 'Katholisch-Willenroth']],
@@ -481,7 +489,7 @@ async function updateGatewayAnnotation(targetPdf, gatewayWerkNr, gatewayType) {
   page.drawText(text, { x: 83.25, y: 421.17, size: 15, font, color: rgb(0, 0, 0) });
 }
 
-async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnabled, ausbauEnabled, zusammenlegungEnabled, wpEnabled, pvEnabled, haushaltEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues) {
+async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnabled, ausbauEnabled, zusammenlegungEnabled, wpEnabled, pvEnabled, haushaltEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues) {
   const targetPdf = await PDFDocument.load(await readPdf(sourceUri));
   const targetForm = targetPdf.getForm();
   const fields = {
@@ -501,6 +509,18 @@ async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnable
   if (ausbauWerkNr.trim()) {
     for (const standField of SZA_STAND_FIELDS[szaType] || []) {
       fields[standField.marker] = String(szaStandValues?.[standField.field] || '').trim();
+      fields[standField.field] = standField.label;
+    }
+  }
+  for (let index = 6; index <= 9; index++) {
+    fields[`zst${index}`] = '';
+    fields[`htzst${index}`] = '';
+  }
+  fields.zst0 = '';
+  fields.htzst0 = '';
+  if (einbauWerkNr.trim()) {
+    for (const standField of SZE_STAND_FIELDS[szeType] || []) {
+      fields[standField.marker] = String(szeStandValues?.[standField.field] || '').trim();
       fields[standField.field] = standField.label;
     }
   }
@@ -545,6 +565,8 @@ export default function App() {
   const [gatewayType, setGatewayType] = useState('Draht');
   const [szaType, setSzaType] = useState('DS');
   const [szaStandValues, setSzaStandValues] = useState({});
+  const [szeType, setSzeType] = useState('ZRZ');
+  const [szeStandValues, setSzeStandValues] = useState({ htzst6: '0', htzst7: '0' });
   const [editBusy, setEditBusy] = useState(false);
   const [einbauEnabled, setEinbauEnabled] = useState(false);
   const [ausbauEnabled, setAusbauEnabled] = useState(false);
@@ -654,7 +676,7 @@ export default function App() {
       const sourceName = selectedEditPdf.name || 'Zaehlerwechselbeleg.pdf';
       const sourceBaseName = sourceName.replace(/\.pdf$/i, '');
       const outputFile = new File(outputDirectory, `${cleanFilenamePart(sourceBaseName)}_bearbeitet.pdf`);
-      outputFile.write(await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, effectiveEinbau, effectiveAusbau, zlgEnabled, wpEnabled, pvEnabled, haushaltEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues));
+      outputFile.write(await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, effectiveEinbau, effectiveAusbau, zlgEnabled, wpEnabled, pvEnabled, haushaltEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues));
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(outputFile.uri, {
           dialogTitle: 'Bearbeitete PDF Vorschau',
@@ -696,6 +718,8 @@ export default function App() {
       setGatewayType('Draht');
       setSzaType('DS');
       setSzaStandValues({});
+      setSzeType('ZRZ');
+      setSzeStandValues({ htzst6: '0', htzst7: '0' });
       setWpEnabled(false);
       setPvEnabled(false);
       setHaushaltEnabled(false);
@@ -851,6 +875,28 @@ export default function App() {
               <TextInput value={einbauWerkNr} onChangeText={setEinbauWerkNr} placeholder="Werknummer eingeben oder scannen" placeholderTextColor="#8a96aa" style={[styles.input, styles.scannerInput]} autoCapitalize="characters" />
               <Pressable style={styles.scanButton} onPress={() => openScanner('einbau')}><Text style={styles.scanButtonText}>Scannen</Text></Pressable>
             </View>
+            {einbauWerkNr.trim() && <>
+              <Text style={styles.label}>Einbauart</Text>
+              <View style={styles.szaTypeRow}>
+                {SZE_TYPES.map(type => <Pressable key={type} style={[styles.gatewayTypeButton, szeType === type && styles.gatewayTypeButtonSelected]} onPress={() => setSzeType(type)}>
+                  <Text style={[styles.gatewayTypeText, szeType === type && styles.gatewayTypeTextSelected]}>{type}</Text>
+                </Pressable>)}
+              </View>
+              <View style={styles.szaStandGrid}>
+                {(SZE_STAND_FIELDS[szeType] || []).map(standField => <View key={standField.field} style={styles.szaStandItem}>
+                  <Text style={styles.szaStandLabel}>{standField.label}</Text>
+                  <TextInput
+                    value={szeStandValues[standField.field] || ''}
+                    onChangeText={value => setSzeStandValues(current => ({ ...current, [standField.field]: value.replace(/[^0-9]/g, '') }))}
+                    placeholder="Stand eingeben"
+                    placeholderTextColor="#8a96aa"
+                    style={styles.szaStandInput}
+                    keyboardType="numeric"
+                    inputMode="numeric"
+                  />
+                </View>)}
+              </View>
+            </>}
             <Text style={styles.label}>Werk Nr. Gateway (optional)</Text>
             <View style={styles.scannerInputRow}>
               <TextInput value={gatewayWerkNr} onChangeText={setGatewayWerkNr} placeholder="Werknummer eingeben oder QR scannen" placeholderTextColor="#8a96aa" style={[styles.input, styles.scannerInput]} autoCapitalize="characters" />
