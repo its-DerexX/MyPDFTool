@@ -2,7 +2,6 @@
 import { ActivityIndicator, Alert, Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import * as Sharing from 'expo-sharing';
 import { Directory, File, Paths } from 'expo-file-system';
 import { Asset } from 'expo-asset';
 import {
@@ -691,15 +690,7 @@ export default function App() {
       const sourceBaseName = sourceName.replace(/\.pdf$/i, '');
       const outputFile = new File(outputDirectory, `${cleanFilenamePart(sourceBaseName)}_bearbeitet.pdf`);
       outputFile.write(await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, effectiveEinbau, effectiveAusbau, zlgEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues));
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(outputFile.uri, {
-          dialogTitle: 'Bearbeitete PDF Vorschau',
-          mimeType: 'application/pdf',
-          UTI: 'com.adobe.pdf'
-        });
-      } else {
-        Alert.alert('Gespeichert', `${selectedGroup} wurde eingetragen und in „MyPDF-Ausgabe“ gespeichert.`);
-      }
+      Alert.alert('Gespeichert', 'Die bearbeitete PDF wurde in „MyPDF-Ausgabe“ gespeichert.');
     } catch (error) {
       Alert.alert('Fehler', error.message || 'Die PDF konnte nicht bearbeitet werden.');
     } finally {
@@ -959,7 +950,6 @@ export default function App() {
           <Pressable style={[styles.button, styles.primary, (() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || klemmeEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || (rseEnabled && !werkNr.trim()) || editBusy; })() && styles.disabled]} disabled={(() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || klemmeEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || (rseEnabled && !werkNr.trim()) || editBusy; })()} onPress={fillRsePdf}>
             {editBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>PDF erstellen und speichern</Text>}
           </Pressable>
-          <Text style={styles.note}>Nach dem Speichern öffnet sich die Vorschau. Die bearbeitete Kopie bleibt im iPhone-Dateien-Ordner „MyPDF-Ausgabe“ gespeichert.</Text>
         </ScrollView>
       </SafeAreaView>
     );
