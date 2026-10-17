@@ -888,7 +888,7 @@ export default function App() {
                 <TextInput value={einbauWerkNr} onChangeText={setEinbauWerkNr} placeholder="Werknummer eingeben oder scannen" placeholderTextColor="#8a96aa" style={[styles.input, styles.scannerInput]} autoCapitalize="characters" />
                 <Pressable style={styles.scanButton} onPress={() => openScanner('einbau')}><Text style={styles.scanButtonText}>Scannen</Text></Pressable>
               </View>
-              {einbauEnabled && einbauWerkNr.trim() && <>
+              {(einbauEnabled || szwEnabled) && einbauWerkNr.trim() && <>
                 <Text style={styles.label}>Einbauart</Text>
                 <View style={styles.szaTypeRow}>
                   {SZE_TYPES.map(type => <Pressable key={type} style={[styles.gatewayTypeButton, szeType === type && styles.gatewayTypeButtonSelected]} onPress={() => setSzeType(type)}>
