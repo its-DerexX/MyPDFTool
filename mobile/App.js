@@ -23,6 +23,8 @@ const templateAsset = require('./assets/blanko.pdf');
 const FORM_FONT_SIZE = 9.268;
 const GATEWAY_2D_CODE_TYPES = ['qr', 'datamatrix', 'aztec', 'pdf417'];
 const WORK_NUMBER_BARCODE_TYPES = ['ean13', 'ean8', 'code128', 'code39', 'itf14', 'upc_a', 'upc_e'];
+const DEFAULT_REMARK_PRESETS = ['Keine Besonderheiten', 'Kunde informiert', 'Zugang nicht möglich'];
+const REMARK_PRESETS_FILE = new File(Paths.document, 'MyPDFTool-Bemerkungsvorlagen.json');
 
 async function readPdf(uri) {
   return new Uint8Array(await new File(uri).arrayBuffer());
@@ -93,6 +95,16 @@ function resolvePostalLocation(postal, rawLocation) {
 
 function cleanFilenamePart(value) {
   return String(value || '').replace(/[<>:"/\\|?*\u0000-\u001F]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function splitRemarkFields(value) {
+  const words = String(value || '').trim().split(/\s+/).filter(Boolean);
+  const lines = ['', ''];
+  for (const word of words) {
+    if (!lines[0] || `${lines[0]} ${word}`.length <= 48) lines[0] = lines[0] ? `${lines[0]} ${word}` : word;
+    else lines[1] = lines[1] ? `${lines[1]} ${word}` : word;
+  }
+  return lines;
 }
 
 function fileExtension(name) {
@@ -496,9 +508,10 @@ async function updateGatewayAnnotation(targetPdf, gatewayWerkNr, gatewayType) {
   page.drawText(text, { x: 83.25, y: 421.17, size: 15, font, color: rgb(0, 0, 0) });
 }
 
-async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnabled, ausbauEnabled, zusammenlegungEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues) {
+async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnabled, ausbauEnabled, zusammenlegungEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues, bemerkungen) {
   const targetPdf = await PDFDocument.load(await readPdf(sourceUri));
   const targetForm = targetPdf.getForm();
+  const [bemerkungen1, bemerkungen2] = splitRemarkFields(bemerkungen);
   const fields = {
     '1': haushaltEnabled ? 'x' : '',
     '7': pvEnabled ? 'x' : '',
@@ -510,7 +523,9 @@ async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnable
     G: ausbauEnabled ? 'x' : '',
     M: zusammenlegungEnabled ? 'x' : '',
     'Werk Nr_2': einbauWerkNr.trim(),
-    'Werk Nr': ausbauWerkNr.trim()
+    'Werk Nr': ausbauWerkNr.trim(),
+    'Bemerkungen 1': bemerkungen1,
+    'Bemerkungen 2': bemerkungen2
   };
   for (let index = 1; index <= 5; index++) {
     fields[`zst${index}`] = '';
@@ -593,6 +608,11 @@ export default function App() {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [selectedDate, setSelectedDate] = useState(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [bemerkungen, setBemerkungen] = useState('');
+  const [remarkPresets, setRemarkPresets] = useState(DEFAULT_REMARK_PRESETS);
+  const [remarkMenuOpen, setRemarkMenuOpen] = useState(false);
+  const [newRemarkPreset, setNewRemarkPreset] = useState('');
+  const [newRemarkPresetOpen, setNewRemarkPresetOpen] = useState(false);
 
   async function openScanner(target) {
     let permission = cameraPermission;
@@ -694,7 +714,7 @@ export default function App() {
         ? `${cleanFilenamePart(sourceBaseName)}, iMSys RSE nachgerüstet.pdf`
         : `${cleanFilenamePart(sourceBaseName)}_bearbeitet.pdf`;
       const outputFile = new File(outputDirectory, outputFilename);
-      outputFile.write(await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, effectiveEinbau, effectiveAusbau, zlgEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues));
+      outputFile.write(await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, effectiveEinbau, effectiveAusbau, zlgEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues, bemerkungen));
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(outputFile.uri, {
           dialogTitle: 'Bearbeitete PDF Vorschau',
@@ -719,6 +739,12 @@ export default function App() {
     });
     if (!result.canceled) {
       const selectedAsset = result.assets[0];
+      try {
+        if (REMARK_PRESETS_FILE.exists) {
+          const savedPresets = JSON.parse(await REMARK_PRESETS_FILE.text());
+          if (Array.isArray(savedPresets) && savedPresets.length) setRemarkPresets(savedPresets.filter(value => typeof value === 'string' && value.trim()));
+        }
+      } catch (_) {}
       const detectedGroup = inferEegGroupFromFilename(selectedAsset.name || selectedAsset.uri || '');
       setSelectedEditPdf(selectedAsset);
       setRseEnabled(false);
@@ -746,8 +772,26 @@ export default function App() {
       setKlemmeEnabled(false);
       setSelectedDate(null);
       setCalendarOpen(false);
+      setBemerkungen('');
+      setRemarkMenuOpen(false);
+      setNewRemarkPreset('');
+      setNewRemarkPresetOpen(false);
       setEditScreen(true);
     }
+  }
+
+  async function saveRemarkPreset() {
+    const value = newRemarkPreset.trim();
+    if (!value) return;
+    const nextPresets = [...new Set([...remarkPresets, value])];
+    setRemarkPresets(nextPresets);
+    setBemerkungen(value);
+    setNewRemarkPreset('');
+    setNewRemarkPresetOpen(false);
+    setRemarkMenuOpen(false);
+    try {
+      REMARK_PRESETS_FILE.write(JSON.stringify(nextPresets));
+    } catch (_) {}
   }
 
   if (editScreen) {
@@ -960,6 +1004,43 @@ export default function App() {
             </View>
           </View>
 
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Bemerkungen:</Text>
+            <TextInput
+              value={bemerkungen}
+              onChangeText={setBemerkungen}
+              placeholder="Bemerkung eingeben"
+              placeholderTextColor="#8a96aa"
+              style={styles.remarksInput}
+              multiline
+              textAlignVertical="top"
+            />
+            <Pressable style={styles.remarkPresetToggle} onPress={() => setRemarkMenuOpen(open => !open)}>
+              <Text style={styles.remarkPresetToggleText}>Vorgefertigte Bemerkung auswählen</Text>
+              <Text style={styles.dropdownArrow}>{remarkMenuOpen ? '⌃' : '⌄'}</Text>
+            </Pressable>
+            {remarkMenuOpen && <View style={styles.remarkPresetMenu}>
+              {remarkPresets.map(preset => <Pressable key={preset} style={styles.remarkPresetItem} onPress={() => { setBemerkungen(preset); setRemarkMenuOpen(false); }}>
+                <Text style={styles.remarkPresetText}>{preset}</Text>
+              </Pressable>)}
+            </View>}
+            {!newRemarkPresetOpen && <Pressable style={styles.savePresetButton} onPress={() => setNewRemarkPresetOpen(true)}>
+              <Text style={styles.savePresetButtonText}>Neue Vorlage speichern</Text>
+            </Pressable>}
+            {newRemarkPresetOpen && <View style={styles.newPresetRow}>
+              <TextInput
+                value={newRemarkPreset}
+                onChangeText={setNewRemarkPreset}
+                placeholder="Neue Vorlage"
+                placeholderTextColor="#8a96aa"
+                style={[styles.input, styles.newPresetInput]}
+              />
+              <Pressable style={styles.savePresetAction} onPress={saveRemarkPreset}>
+                <Text style={styles.savePresetActionText}>Speichern</Text>
+              </Pressable>
+            </View>}
+          </View>
+
           <Pressable style={[styles.button, styles.primary, (() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || klemmeEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || (rseEnabled && !werkNr.trim()) || editBusy; })() && styles.disabled]} disabled={(() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || klemmeEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || (rseEnabled && !werkNr.trim()) || editBusy; })()} onPress={fillRsePdf}>
             {editBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>PDF erstellen und speichern</Text>}
           </Pressable>
@@ -1005,6 +1086,18 @@ const styles = StyleSheet.create({
   selectedFileTitle: { marginTop: 24, color: '#53627b', fontSize: 13, fontWeight: '600' },
   selectedFileName: { marginTop: 4, color: '#172033', fontSize: 16, fontWeight: '600' },
   note: { marginTop: 28, color: '#71809a', lineHeight: 20, textAlign: 'center' },
+  remarksInput: { minHeight: 78, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, color: '#172033', fontSize: 16, backgroundColor: '#f8fafc' },
+  remarkPresetToggle: { marginTop: 10, minHeight: 46, paddingHorizontal: 12, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, backgroundColor: '#eef2f8', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  remarkPresetToggleText: { color: '#172033', fontSize: 15, fontWeight: '600' },
+  remarkPresetMenu: { marginTop: 4, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, overflow: 'hidden', backgroundColor: '#fff' },
+  remarkPresetItem: { paddingHorizontal: 12, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: '#eef2f8' },
+  remarkPresetText: { color: '#172033', fontSize: 15 },
+  savePresetButton: { alignSelf: 'flex-start', marginTop: 10, paddingVertical: 6 },
+  savePresetButtonText: { color: '#2457d6', fontSize: 14, fontWeight: '600' },
+  newPresetRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
+  newPresetInput: { flex: 1, minHeight: 44, fontSize: 14 },
+  savePresetAction: { minHeight: 44, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#2457d6', alignItems: 'center', justifyContent: 'center' },
+  savePresetActionText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   version: { position: 'absolute', right: 12, bottom: 8, color: '#9aa5b8', fontSize: 11 },
   editContainer: { padding: 24, paddingBottom: 40 },
   backButton: { alignSelf: 'flex-start', paddingVertical: 8, paddingRight: 18 },
