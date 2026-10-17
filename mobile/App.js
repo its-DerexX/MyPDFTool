@@ -303,7 +303,10 @@ function formatPdfDate(date) {
 }
 
 function normalizeGatewayWerkNr(value) {
-  const match = String(value || '').toUpperCase().match(/EEMH\d+/);
+  const normalized = String(value || '')
+    .toUpperCase()
+    .replace(/[\s:#-]+/g, '');
+  const match = normalized.match(/EEMH\d+/);
   return match ? match[0] : '';
 }
 
