@@ -489,13 +489,16 @@ async function updateGatewayAnnotation(targetPdf, gatewayWerkNr, gatewayType) {
   page.drawText(text, { x: 83.25, y: 421.17, size: 15, font, color: rgb(0, 0, 0) });
 }
 
-async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnabled, ausbauEnabled, zusammenlegungEnabled, wpEnabled, pvEnabled, haushaltEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues) {
+async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnabled, ausbauEnabled, zusammenlegungEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues) {
   const targetPdf = await PDFDocument.load(await readPdf(sourceUri));
   const targetForm = targetPdf.getForm();
   const fields = {
     '1': haushaltEnabled ? 'x' : '',
     '7': pvEnabled ? 'x' : '',
     '9': wpEnabled ? 'x' : '',
+    '10': gewerbeEnabled ? 'x' : '',
+    '11': baustromEnabled ? 'x' : '',
+    '13': klemmeEnabled ? 'x' : '',
     F: einbauEnabled ? 'x' : '',
     G: ausbauEnabled ? 'x' : '',
     M: zusammenlegungEnabled ? 'x' : '',
@@ -575,6 +578,9 @@ export default function App() {
   const [wpEnabled, setWpEnabled] = useState(false);
   const [pvEnabled, setPvEnabled] = useState(false);
   const [haushaltEnabled, setHaushaltEnabled] = useState(false);
+  const [gewerbeEnabled, setGewerbeEnabled] = useState(false);
+  const [baustromEnabled, setBaustromEnabled] = useState(false);
+  const [klemmeEnabled, setKlemmeEnabled] = useState(false);
   const [scannerTarget, setScannerTarget] = useState(null);
   const scannerLockRef = React.useRef(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -667,7 +673,7 @@ export default function App() {
   async function fillRsePdf() {
     const effectiveEinbau = einbauEnabled || szwEnabled;
     const effectiveAusbau = ausbauEnabled || szwEnabled;
-    const hasSelection = rseEnabled || effectiveEinbau || effectiveAusbau || zlgEnabled || wpEnabled || pvEnabled || haushaltEnabled;
+    const hasSelection = rseEnabled || effectiveEinbau || effectiveAusbau || zlgEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || klemmeEnabled;
     if (!selectedEditPdf || !hasSelection || !selectedDate || (rseEnabled && (!selectedGroup || !werkNr.trim()))) return;
     setEditBusy(true);
     try {
@@ -676,7 +682,7 @@ export default function App() {
       const sourceName = selectedEditPdf.name || 'Zaehlerwechselbeleg.pdf';
       const sourceBaseName = sourceName.replace(/\.pdf$/i, '');
       const outputFile = new File(outputDirectory, `${cleanFilenamePart(sourceBaseName)}_bearbeitet.pdf`);
-      outputFile.write(await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, effectiveEinbau, effectiveAusbau, zlgEnabled, wpEnabled, pvEnabled, haushaltEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues));
+      outputFile.write(await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, effectiveEinbau, effectiveAusbau, zlgEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues));
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(outputFile.uri, {
           dialogTitle: 'Bearbeitete PDF Vorschau',
@@ -723,6 +729,9 @@ export default function App() {
       setWpEnabled(false);
       setPvEnabled(false);
       setHaushaltEnabled(false);
+      setGewerbeEnabled(false);
+      setBaustromEnabled(false);
+      setKlemmeEnabled(false);
       setSelectedDate(null);
       setCalendarOpen(false);
       setEditScreen(true);
@@ -925,10 +934,22 @@ export default function App() {
                 <View style={[styles.checkbox, haushaltEnabled && styles.checkboxChecked]}>{haushaltEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
                 <Text style={styles.checkboxLabel}>Haushalt</Text>
               </Pressable>
+              <Pressable style={styles.checkboxGridItem} onPress={() => setGewerbeEnabled(value => !value)}>
+                <View style={[styles.checkbox, gewerbeEnabled && styles.checkboxChecked]}>{gewerbeEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
+                <Text style={styles.checkboxLabel}>Gewerbe</Text>
+              </Pressable>
+              <Pressable style={styles.checkboxGridItem} onPress={() => setBaustromEnabled(value => !value)}>
+                <View style={[styles.checkbox, baustromEnabled && styles.checkboxChecked]}>{baustromEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
+                <Text style={styles.checkboxLabel}>Baustrom</Text>
+              </Pressable>
+              <Pressable style={styles.checkboxGridItem} onPress={() => setKlemmeEnabled(value => !value)}>
+                <View style={[styles.checkbox, klemmeEnabled && styles.checkboxChecked]}>{klemmeEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
+                <Text style={styles.checkboxLabel}>Klemme</Text>
+              </Pressable>
             </View>
           </View>
 
-          <Pressable style={[styles.button, styles.primary, (() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wpEnabled || pvEnabled || haushaltEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || (rseEnabled && !werkNr.trim()) || editBusy; })() && styles.disabled]} disabled={(() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wpEnabled || pvEnabled || haushaltEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || (rseEnabled && !werkNr.trim()) || editBusy; })()} onPress={fillRsePdf}>
+          <Pressable style={[styles.button, styles.primary, (() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || klemmeEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || (rseEnabled && !werkNr.trim()) || editBusy; })() && styles.disabled]} disabled={(() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || klemmeEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || (rseEnabled && !werkNr.trim()) || editBusy; })()} onPress={fillRsePdf}>
             {editBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>PDF erstellen und speichern</Text>}
           </Pressable>
           <Text style={styles.note}>Nach dem Speichern öffnet sich die Vorschau. Die bearbeitete Kopie bleibt im iPhone-Dateien-Ordner „MyPDF-Ausgabe“ gespeichert.</Text>
