@@ -99,9 +99,13 @@ function cleanFilenamePart(value) {
   return String(value || '').replace(/[<>:"/\\|?*\u0000-\u001F]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function removePdfExtension(value) {
+  return cleanFilenamePart(value).replace(/\.pdf$/i, '').trim();
+}
+
 function ensurePdfFilename(value, fallback) {
-  const cleaned = cleanFilenamePart(value).replace(/\.pdf$/i, '').trim();
-  const fallbackBase = cleanFilenamePart(fallback).replace(/\.pdf$/i, '').trim() || 'Zaehlerwechselbeleg';
+  const cleaned = removePdfExtension(value);
+  const fallbackBase = removePdfExtension(fallback) || 'Zaehlerwechselbeleg';
   return `${cleaned || fallbackBase}.pdf`;
 }
 
@@ -633,6 +637,11 @@ export default function App() {
   const [rseRemarkAuto, setRseRemarkAuto] = useState(false);
   const selectedFileNameInputRef = React.useRef(null);
 
+  function moveSelectedFileNameCursorToEnd(value) {
+    const end = String(value || '').length;
+    setTimeout(() => selectedFileNameInputRef.current?.setNativeProps({ selection: { start: end, end } }), 0);
+  }
+
   React.useEffect(() => {
     const onlyRse = rseEnabled && !einbauEnabled && !ausbauEnabled && !szwEnabled && !zlgEnabled;
     if (onlyRse && !bemerkungen.trim()) {
@@ -793,7 +802,7 @@ export default function App() {
       } catch (_) {}
       const detectedGroup = inferEegGroupFromFilename(selectedAsset.name || selectedAsset.uri || '');
       setSelectedEditPdf(selectedAsset);
-      setSelectedEditPdfName(selectedAsset.name || 'Zaehlerwechselbeleg.pdf');
+      setSelectedEditPdfName(removePdfExtension(selectedAsset.name || 'Zaehlerwechselbeleg.pdf'));
       setRseEnabled(false);
       setSelectedGroup(detectedGroup || EEG_GROUPS[0]);
       setGroupAutoDetected(Boolean(detectedGroup));
@@ -891,11 +900,8 @@ export default function App() {
           <TextInput
             ref={selectedFileNameInputRef}
             value={selectedEditPdfName}
-            onChangeText={setSelectedEditPdfName}
-            onFocus={() => {
-              const end = selectedEditPdfName.length;
-              setTimeout(() => selectedFileNameInputRef.current?.setNativeProps({ selection: { start: end, end } }), 0);
-            }}
+            onChangeText={value => { setSelectedEditPdfName(value); moveSelectedFileNameCursorToEnd(value); }}
+            onFocus={() => moveSelectedFileNameCursorToEnd(selectedEditPdfName)}
             placeholder="Dateiname eingeben"
             placeholderTextColor="#8a96aa"
             style={styles.selectedFileNameInput}
