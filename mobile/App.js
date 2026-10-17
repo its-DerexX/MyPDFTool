@@ -1,10 +1,11 @@
 ﻿import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Sharing from 'expo-sharing';
 import { Directory, File, Paths } from 'expo-file-system';
 import { Asset } from 'expo-asset';
-import { PDFBool, PDFDocument, PDFName } from 'pdf-lib';
+import { PDFBool, PDFDocument, PDFName, PDFString } from 'pdf-lib';
 import pako from 'pako/dist/pako.cjs.js';
 import { zipSync } from 'fflate';
 
@@ -245,6 +246,11 @@ function formatPdfDate(date) {
   return `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}.${date.getFullYear()}`;
 }
 
+function normalizeGatewayWerkNr(value) {
+  const match = String(value || '').toUpperCase().match(/EEMH\d+/);
+  return match ? match[0] : '';
+}
+
 function MiniCalendar({ value, onChange }) {
   const today = new Date();
   const [visibleMonth, setVisibleMonth] = useState(() => new Date((value || today).getFullYear(), (value || today).getMonth(), 1));
@@ -285,16 +291,45 @@ function MiniCalendar({ value, onChange }) {
   );
 }
 
-async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnabled, ausbauEnabled, zusammenlegungEnabled, wpEnabled, pvEnabled, haushaltEnabled) {
+function updateGatewayAnnotation(targetPdf, gatewayWerkNr, gatewayType) {
+  const gateway = normalizeGatewayWerkNr(gatewayWerkNr);
+  if (!gateway) return;
+  const type = gatewayType === 'Draht' ? 'Draht' : 'Funk';
+  const contentsName = PDFName.of('Contents');
+  const subtypeName = PDFName.of('Subtype');
+  const appearanceName = PDFName.of('AP');
+
+  for (const page of targetPdf.getPages()) {
+    const rawAnnots = page.node.get(PDFName.of('Annots'));
+    const annots = rawAnnots && targetPdf.context.lookup(rawAnnots);
+    if (!annots?.asArray) continue;
+    for (const ref of annots.asArray()) {
+      const annotation = targetPdf.context.lookup(ref);
+      if (!annotation?.get || annotation.get(subtypeName)?.toString() !== '/FreeText') continue;
+      const contents = annotation.get(contentsName);
+      const text = contents?.decodeText ? contents.decodeText() : '';
+      const match = text.match(/^(SMGW\s+)\S+(\s+(?:Draht|Funk))$/i);
+      if (!match) continue;
+      annotation.set(contentsName, PDFString.of(`${match[1]}${gateway} ${type}`));
+      // The old appearance contains the previous gateway number. Removing it
+      // lets the PDF viewer render the updated FreeText annotation contents.
+      annotation.delete(appearanceName);
+    }
+  }
+}
+
+async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnabled, ausbauEnabled, zusammenlegungEnabled, wpEnabled, pvEnabled, haushaltEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType) {
   const targetPdf = await PDFDocument.load(await readPdf(sourceUri));
   const targetForm = targetPdf.getForm();
   const fields = {
-    A: wpEnabled ? 'x' : '',
-    B: pvEnabled ? 'x' : '',
-    C: haushaltEnabled ? 'x' : '',
+    '1': haushaltEnabled ? 'x' : '',
+    '7': pvEnabled ? 'x' : '',
+    '9': wpEnabled ? 'x' : '',
     F: einbauEnabled ? 'x' : '',
     G: ausbauEnabled ? 'x' : '',
-    M: zusammenlegungEnabled ? 'x' : ''
+    M: zusammenlegungEnabled ? 'x' : '',
+    'Werk Nr_2': einbauWerkNr.trim(),
+    'Werk Nr': ausbauWerkNr.trim()
   };
   if (group && werkNr.trim()) {
     const groupNumber = Number(group.slice(-2));
@@ -306,8 +341,8 @@ async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnable
     });
   }
   if (selectedDate) {
-    if (ausbauEnabled) fields.Datum = formatPdfDate(selectedDate);
-    else if (einbauEnabled) fields.Datum_2 = formatPdfDate(selectedDate);
+    if (ausbauEnabled || zusammenlegungEnabled) fields.Datum = formatPdfDate(selectedDate);
+    else fields.Datum_2 = formatPdfDate(selectedDate);
   }
 
   for (const [fieldName, value] of Object.entries(fields)) {
@@ -315,6 +350,8 @@ async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnable
     field.setText(value);
     field.setFontSize(FORM_FONT_SIZE);
   }
+
+  updateGatewayAnnotation(targetPdf, gatewayWerkNr, gatewayType);
 
   targetForm.acroForm.dict.set(PDFName.of('NeedAppearances'), PDFBool.True);
   return targetPdf.save();
@@ -329,6 +366,10 @@ export default function App() {
   const [groupMenuOpen, setGroupMenuOpen] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState(EEG_GROUPS[0]);
   const [werkNr, setWerkNr] = useState('');
+  const [einbauWerkNr, setEinbauWerkNr] = useState('');
+  const [ausbauWerkNr, setAusbauWerkNr] = useState('');
+  const [gatewayWerkNr, setGatewayWerkNr] = useState('');
+  const [gatewayType, setGatewayType] = useState('Funk');
   const [editBusy, setEditBusy] = useState(false);
   const [einbauEnabled, setEinbauEnabled] = useState(false);
   const [ausbauEnabled, setAusbauEnabled] = useState(false);
@@ -337,8 +378,35 @@ export default function App() {
   const [wpEnabled, setWpEnabled] = useState(false);
   const [pvEnabled, setPvEnabled] = useState(false);
   const [haushaltEnabled, setHaushaltEnabled] = useState(false);
+  const [scannerTarget, setScannerTarget] = useState(null);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [selectedDate, setSelectedDate] = useState(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
+
+  async function openScanner(target) {
+    let permission = cameraPermission;
+    if (!permission?.granted) permission = await requestCameraPermission();
+    if (!permission?.granted) {
+      Alert.alert('Kamerazugriff benötigt', 'Bitte erlaube den Kamerazugriff, damit ein Barcode gescannt werden kann.');
+      return;
+    }
+    setScannerTarget(target);
+  }
+
+  function handleBarcodeScanned({ data }) {
+    if (!data || !scannerTarget) return;
+    if (scannerTarget === 'einbau') setEinbauWerkNr(data.trim());
+    else if (scannerTarget === 'ausbau') setAusbauWerkNr(data.trim());
+    else {
+      const gateway = normalizeGatewayWerkNr(data);
+      if (!gateway) {
+        Alert.alert('Gateway-QR-Code nicht erkannt', 'Im QR-Code wurde keine Werknummer im Format EEMH########## gefunden.');
+        return;
+      }
+      setGatewayWerkNr(gateway);
+    }
+    setScannerTarget(null);
+  }
 
   async function choosePdf() {
     const result = await DocumentPicker.getDocumentAsync({
@@ -393,7 +461,7 @@ export default function App() {
     const effectiveEinbau = einbauEnabled || szwEnabled;
     const effectiveAusbau = ausbauEnabled || szwEnabled;
     const hasSelection = rseEnabled || effectiveEinbau || effectiveAusbau || zlgEnabled || wpEnabled || pvEnabled || haushaltEnabled;
-    if (!selectedEditPdf || !hasSelection || (rseEnabled && (!selectedGroup || !werkNr.trim()))) return;
+    if (!selectedEditPdf || !hasSelection || !selectedDate || (rseEnabled && (!selectedGroup || !werkNr.trim()))) return;
     setEditBusy(true);
     try {
       const outputDirectory = new Directory(Paths.document, 'MyPDF-Ausgabe');
@@ -401,7 +469,7 @@ export default function App() {
       const sourceName = selectedEditPdf.name || 'Zaehlerwechselbeleg.pdf';
       const sourceBaseName = sourceName.replace(/\.pdf$/i, '');
       const outputFile = new File(outputDirectory, `${cleanFilenamePart(sourceBaseName)}_bearbeitet.pdf`);
-      outputFile.write(await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, effectiveEinbau, effectiveAusbau, zlgEnabled, wpEnabled, pvEnabled, haushaltEnabled));
+      outputFile.write(await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, effectiveEinbau, effectiveAusbau, zlgEnabled, wpEnabled, pvEnabled, haushaltEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType));
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(outputFile.uri, {
           dialogTitle: 'Bearbeitete PDF Vorschau',
@@ -433,6 +501,10 @@ export default function App() {
       setAusbauEnabled(false);
       setSzwEnabled(false);
       setZlgEnabled(false);
+      setEinbauWerkNr('');
+      setAusbauWerkNr('');
+      setGatewayWerkNr('');
+      setGatewayType('Funk');
       setWpEnabled(false);
       setPvEnabled(false);
       setHaushaltEnabled(false);
@@ -445,6 +517,30 @@ export default function App() {
   if (editScreen) {
     return (
       <SafeAreaView style={styles.safe}>
+        <Modal visible={Boolean(scannerTarget)} animationType="slide" onRequestClose={() => setScannerTarget(null)}>
+          <View style={styles.scannerScreen}>
+            <CameraView
+              style={styles.camera}
+              facing="back"
+              onBarcodeScanned={scannerTarget ? handleBarcodeScanned : undefined}
+              barcodeScannerSettings={{ barcodeTypes: ['qr', 'aztec', 'dataMatrix', 'pdf417', 'ean13', 'ean8', 'code128', 'code39', 'itf14', 'upc_a', 'upc_e'] }}
+            />
+            <View style={styles.scannerOverlay}>
+              <View style={styles.scannerHeader}>
+                <Text style={styles.scannerEyebrow}>SCANNER</Text>
+                <Text style={styles.scannerTitle}>{scannerTarget === 'einbau' ? 'Werk Nr. Einbau' : scannerTarget === 'ausbau' ? 'Werk Nr. Ausbau' : 'Werk Nr. Gateway'}</Text>
+                <Text style={styles.scannerHint}>{scannerTarget === 'gateway' ? 'QR-Code in den Rahmen halten.' : 'QR-Code oder Barcode in den Rahmen halten.'}</Text>
+              </View>
+              <View style={styles.scanFrame}>
+                <View style={styles.scanFrameLine} />
+              </View>
+              <View style={styles.scannerStatus}><View style={styles.scannerStatusDot} /><Text style={styles.scannerStatusText}>Bereit zum Erfassen</Text></View>
+              <Pressable style={styles.scannerCloseButton} onPress={() => setScannerTarget(null)}>
+                <Text style={styles.primaryButtonText}>Abbrechen</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
         <ScrollView contentContainerStyle={styles.editContainer}>
           <Pressable onPress={() => setEditScreen(false)} style={styles.backButton}>
             <Text style={styles.backText}>‹ Zurück</Text>
@@ -528,7 +624,38 @@ export default function App() {
             </>}
           </View>
 
-          <Pressable style={[styles.button, styles.primary, (() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wpEnabled || pvEnabled || haushaltEnabled; return !selectedEditPdf || !hasSelection || (rseEnabled && !werkNr.trim()) || editBusy; })() && styles.disabled]} disabled={(() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wpEnabled || pvEnabled || haushaltEnabled; return !selectedEditPdf || !hasSelection || (rseEnabled && !werkNr.trim()) || editBusy; })()} onPress={fillRsePdf}>
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Werknummern</Text>
+            <Text style={styles.sectionHint}>Für SZE, SZA, SZW und ZLG können Ausbau und Einbau unabhängig erfasst werden.</Text>
+            <Text style={styles.label}>Werk Nr. Ausbau</Text>
+            <View style={styles.scannerInputRow}>
+              <TextInput value={ausbauWerkNr} onChangeText={setAusbauWerkNr} placeholder="Werknummer eingeben oder scannen" placeholderTextColor="#8a96aa" style={[styles.input, styles.scannerInput]} autoCapitalize="characters" />
+              <Pressable style={styles.scanButton} onPress={() => openScanner('ausbau')}><Text style={styles.scanButtonText}>Scannen</Text></Pressable>
+            </View>
+            <Text style={styles.label}>Werk Nr. Einbau</Text>
+            <View style={styles.scannerInputRow}>
+              <TextInput value={einbauWerkNr} onChangeText={setEinbauWerkNr} placeholder="Werknummer eingeben oder scannen" placeholderTextColor="#8a96aa" style={[styles.input, styles.scannerInput]} autoCapitalize="characters" />
+              <Pressable style={styles.scanButton} onPress={() => openScanner('einbau')}><Text style={styles.scanButtonText}>Scannen</Text></Pressable>
+            </View>
+            <Text style={styles.label}>Werk Nr. Gateway (optional)</Text>
+            <View style={styles.scannerInputRow}>
+              <TextInput value={gatewayWerkNr} onChangeText={setGatewayWerkNr} placeholder="Werknummer eingeben oder QR scannen" placeholderTextColor="#8a96aa" style={[styles.input, styles.scannerInput]} autoCapitalize="characters" />
+              <Pressable style={styles.scanButton} onPress={() => openScanner('gateway')}><Text style={styles.scanButtonText}>Scannen</Text></Pressable>
+            </View>
+            {gatewayWerkNr.trim() && <>
+              <Text style={styles.label}>Übertragung Gateway</Text>
+              <View style={styles.gatewayTypeRow}>
+                <Pressable style={[styles.gatewayTypeButton, gatewayType === 'Draht' && styles.gatewayTypeButtonSelected]} onPress={() => setGatewayType('Draht')}>
+                  <Text style={[styles.gatewayTypeText, gatewayType === 'Draht' && styles.gatewayTypeTextSelected]}>Draht</Text>
+                </Pressable>
+                <Pressable style={[styles.gatewayTypeButton, gatewayType === 'Funk' && styles.gatewayTypeButtonSelected]} onPress={() => setGatewayType('Funk')}>
+                  <Text style={[styles.gatewayTypeText, gatewayType === 'Funk' && styles.gatewayTypeTextSelected]}>Funk</Text>
+                </Pressable>
+              </View>
+            </>}
+          </View>
+
+          <Pressable style={[styles.button, styles.primary, (() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wpEnabled || pvEnabled || haushaltEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || (rseEnabled && !werkNr.trim()) || editBusy; })() && styles.disabled]} disabled={(() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wpEnabled || pvEnabled || haushaltEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || (rseEnabled && !werkNr.trim()) || editBusy; })()} onPress={fillRsePdf}>
             {editBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>PDF erstellen und speichern</Text>}
           </Pressable>
           <Text style={styles.note}>Nach dem Speichern öffnet sich die Vorschau. Die bearbeitete Kopie bleibt im iPhone-Dateien-Ordner „MyPDF-Ausgabe“ gespeichert.</Text>
@@ -580,6 +707,7 @@ const styles = StyleSheet.create({
   backText: { color: '#2457d6', fontSize: 17, fontWeight: '600' },
   card: { marginTop: 26, padding: 20, borderRadius: 16, backgroundColor: '#fff', shadowColor: '#172033', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
   sectionTitle: { color: '#172033', fontSize: 19, fontWeight: '700', marginBottom: 18 },
+  sectionHint: { color: '#71809a', fontSize: 13, lineHeight: 19, marginTop: -8 },
   checkboxRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
   checkbox: { width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: '#9aa5b8', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   checkboxChecked: { backgroundColor: '#2457d6', borderColor: '#2457d6' },
@@ -595,6 +723,29 @@ const styles = StyleSheet.create({
   dropdownItem: { paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eef2f8' },
   dropdownItemText: { color: '#172033', fontSize: 16 },
   input: { minHeight: 50, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, paddingHorizontal: 14, color: '#172033', fontSize: 16, backgroundColor: '#f8fafc' },
+  scannerInputRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  scannerInput: { flex: 1, paddingHorizontal: 10 },
+  readOnlyInput: { color: '#53627b' },
+  scanButton: { minHeight: 50, width: 76, borderRadius: 10, backgroundColor: '#2457d6', alignItems: 'center', justifyContent: 'center' },
+  scanButtonText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  gatewayTypeRow: { flexDirection: 'row', gap: 8 },
+  gatewayTypeButton: { flex: 1, minHeight: 44, borderRadius: 10, borderWidth: 1, borderColor: '#cbd5e5', backgroundColor: '#f8fafc', alignItems: 'center', justifyContent: 'center' },
+  gatewayTypeButtonSelected: { borderColor: '#2457d6', backgroundColor: '#e8efff' },
+  gatewayTypeText: { color: '#53627b', fontSize: 15, fontWeight: '700' },
+  gatewayTypeTextSelected: { color: '#2457d6' },
+  scannerScreen: { flex: 1, backgroundColor: '#000' },
+  camera: { flex: 1 },
+  scannerOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', paddingTop: 54, paddingHorizontal: 24, backgroundColor: 'rgba(0,0,0,0.18)' },
+  scannerHeader: { width: '100%', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 18, borderRadius: 16, backgroundColor: 'rgba(10,18,35,0.72)' },
+  scannerEyebrow: { color: '#9fb8ff', fontSize: 12, fontWeight: '800', letterSpacing: 1.5 },
+  scannerTitle: { color: '#fff', fontSize: 24, fontWeight: '700', marginTop: 4 },
+  scannerHint: { color: '#e7ecf8', fontSize: 15, marginTop: 8, textAlign: 'center' },
+  scanFrame: { width: '88%', height: 190, marginTop: 58, borderWidth: 2, borderColor: '#fff', borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.08)', alignItems: 'center', justifyContent: 'center' },
+  scanFrameLine: { width: '88%', height: 2, backgroundColor: '#65a4ff', shadowColor: '#65a4ff', shadowOpacity: 0.9, shadowRadius: 8 },
+  scannerStatus: { flexDirection: 'row', alignItems: 'center', marginTop: 18, paddingVertical: 9, paddingHorizontal: 14, borderRadius: 20, backgroundColor: 'rgba(10,18,35,0.72)' },
+  scannerStatusDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: '#4ade80', marginRight: 8 },
+  scannerStatusText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  scannerCloseButton: { position: 'absolute', bottom: 42, left: 24, right: 24, minHeight: 52, borderRadius: 12, backgroundColor: '#2457d6', alignItems: 'center', justifyContent: 'center' },
   hint: { marginTop: 16, color: '#71809a', fontSize: 13, lineHeight: 19 },
   calendarHint: { marginBottom: 8, color: '#71809a', fontSize: 13, lineHeight: 18 },
   dateValue: { marginLeft: 'auto', color: '#2457d6', fontSize: 16, fontWeight: '600' },
