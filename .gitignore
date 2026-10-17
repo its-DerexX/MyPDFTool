@@ -13,6 +13,7 @@ examples/
 mobile/output-form-test.pdf
 
 # Expo/export build artifacts
+mobile/dist/_expo/
 mobile/dist-check/
 mobile/dist-version-check/
 mobile/dist-address-check/
