@@ -630,6 +630,10 @@ export default function App() {
     }
   }, [rseEnabled, einbauEnabled, ausbauEnabled, szwEnabled, zlgEnabled, bemerkungen, rseRemarkAuto]);
 
+  React.useEffect(() => {
+    setKlemmeEnabled(einbauEnabled || szwEnabled || zlgEnabled);
+  }, [einbauEnabled, szwEnabled, zlgEnabled]);
+
   async function openScanner(target) {
     let permission = cameraPermission;
     if (!permission?.granted) permission = await requestCameraPermission();
