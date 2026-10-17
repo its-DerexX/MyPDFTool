@@ -12,6 +12,8 @@ import {
   PDFNumber,
   PDFString,
   StandardFonts,
+  degrees,
+  drawText,
   rgb
 } from 'pdf-lib';
 import pako from 'pako/dist/pako.cjs.js';
@@ -354,6 +356,80 @@ function replaceAppearanceText(targetPdf, field, value) {
   }
 }
 
+const SAVED_TEXT_FIELD = {
+  text: 'Bernges',
+  x: 312.000004,
+  y: 61.92,
+  width: 56.25,
+  height: 17.25,
+  baseline: 3.670898,
+  fontSize: 15
+};
+
+function hasSavedTextField(targetPdf) {
+  const contentsName = PDFName.of('Contents');
+  const subtypeName = PDFName.of('Subtype');
+  for (const page of targetPdf.getPages()) {
+    const rawAnnots = page.node.get(PDFName.of('Annots'));
+    const annots = rawAnnots && targetPdf.context.lookup(rawAnnots);
+    if (!annots?.asArray) continue;
+    for (const ref of annots.asArray()) {
+      const annotation = targetPdf.context.lookup(ref);
+      if (annotation?.get(subtypeName)?.toString() !== '/FreeText') continue;
+      const contents = annotation.get(contentsName);
+      const text = contents?.decodeText ? contents.decodeText() : '';
+      if (text === SAVED_TEXT_FIELD.text) return true;
+    }
+  }
+  return false;
+}
+
+async function addSavedTextField(targetPdf) {
+  if (hasSavedTextField(targetPdf)) return;
+
+  const page = targetPdf.getPages()[0];
+  const context = targetPdf.context;
+  const font = await targetPdf.embedFont(StandardFonts.Helvetica);
+  const appearance = context.formXObject(
+    drawText(font.encodeText(SAVED_TEXT_FIELD.text), {
+      font: PDFName.of(font.name),
+      size: SAVED_TEXT_FIELD.fontSize,
+      color: rgb(0, 0, 0),
+      x: 0,
+      y: SAVED_TEXT_FIELD.baseline,
+      rotate: degrees(0),
+      xSkew: degrees(0),
+      ySkew: degrees(0)
+    }),
+    {
+      Resources: { Font: { [font.name]: font.ref } },
+      BBox: context.obj([0, 0, SAVED_TEXT_FIELD.width, SAVED_TEXT_FIELD.height]),
+      Matrix: context.obj([1, 0, 0, 1, 0, 0])
+    }
+  );
+  const appearanceRef = context.register(appearance);
+  const annotation = context.obj({
+    Type: 'Annot',
+    Subtype: 'FreeText',
+    F: 4,
+    Rect: context.obj([
+      SAVED_TEXT_FIELD.x,
+      SAVED_TEXT_FIELD.y,
+      SAVED_TEXT_FIELD.x + SAVED_TEXT_FIELD.width,
+      SAVED_TEXT_FIELD.y + SAVED_TEXT_FIELD.height
+    ]),
+    Contents: PDFString.of(SAVED_TEXT_FIELD.text),
+    C: context.obj([0, 0, 0]),
+    CA: 1,
+    IT: 'FreeTextTypewriter',
+    BS: context.obj({ Type: 'Border', W: 0, S: 'S' }),
+    Rotate: 0,
+    DA: PDFString.of(`${font.name} ${SAVED_TEXT_FIELD.fontSize} Tf 0 0 0 rg 0 0 0 RG `),
+    AP: context.obj({ N: appearanceRef })
+  });
+  page.node.addAnnot(context.register(annotation));
+}
+
 async function updateGatewayAnnotation(targetPdf, gatewayWerkNr, gatewayType) {
   const gateway = normalizeGatewayWerkNr(gatewayWerkNr);
   if (!gateway) return;
@@ -422,6 +498,7 @@ async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnable
     replaceAppearanceText(targetPdf, targetForm.getTextField(fieldName), value);
   }
 
+  await addSavedTextField(targetPdf);
   await updateGatewayAnnotation(targetPdf, gatewayWerkNr, gatewayType);
 
   targetForm.acroForm.dict.set(PDFName.of('NeedAppearances'), PDFBool.False);
