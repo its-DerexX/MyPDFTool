@@ -302,12 +302,10 @@ function formatPdfDate(date) {
   return `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}.${date.getFullYear()}`;
 }
 
-function normalizeGatewayWerkNr(value) {
-  const normalized = String(value || '')
-    .toUpperCase()
-    .replace(/[\s:#-]+/g, '');
-  const match = normalized.match(/EEMH\d+/);
-  return match ? match[0] : '';
+function extractGatewayWerkNr(value) {
+  const payload = String(value || '');
+  const match = payload.match(/EEMH[\s:#-]*(\d+)/i);
+  return match ? `EEMH${match[1]}`.toUpperCase() : '';
 }
 
 function MiniCalendar({ value, onChange }) {
@@ -456,7 +454,7 @@ async function addSavedTextField(targetPdf) {
 }
 
 async function updateGatewayAnnotation(targetPdf, gatewayWerkNr, gatewayType) {
-  const gateway = normalizeGatewayWerkNr(gatewayWerkNr);
+  const gateway = extractGatewayWerkNr(gatewayWerkNr);
   if (!gateway) return;
 
   const type = gatewayType === 'Draht' ? 'Draht' : 'Funk';
@@ -605,14 +603,15 @@ export default function App() {
     if (!data || !scannerTarget || scannerLockRef.current) return;
     scannerLockRef.current = true;
     const target = scannerTarget;
+    const rawPayload = String(data);
     setScannerTarget(null);
 
-    if (target === 'einbau') setEinbauWerkNr(data.trim());
-    else if (target === 'ausbau') setAusbauWerkNr(data.trim());
+    if (target === 'einbau') setEinbauWerkNr(rawPayload.trim());
+    else if (target === 'ausbau') setAusbauWerkNr(rawPayload.trim());
     else {
-      const gateway = normalizeGatewayWerkNr(data);
+      const gateway = extractGatewayWerkNr(rawPayload);
       if (!gateway) {
-        Alert.alert('Gateway-QR-Code nicht erkannt', 'Im QR-Code wurde keine Werknummer im Format EEMH########## gefunden.');
+        Alert.alert('Gateway-QR-Code gelesen', 'Der QR-Code wurde gelesen, enthält aber keine Werknummer im Format EEMH##########.');
         return;
       }
       setGatewayWerkNr(gateway);
