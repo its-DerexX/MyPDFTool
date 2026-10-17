@@ -1276,7 +1276,7 @@ const styles = StyleSheet.create({
   dateValue: { marginLeft: 'auto', color: '#2457d6', fontSize: 16, fontWeight: '600' },
   dateButton: { minHeight: 50, marginTop: 0, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', position: 'relative', backgroundColor: '#eef2f8' },
   dateButtonText: { flex: 1, color: '#172033', fontSize: 16, fontWeight: '600', textAlign: 'center' },
-  dateButtonValue: { fontSize: 17, fontWeight: '700' },
+  dateButtonValue: { fontSize: 18, fontWeight: '700' },
   dateButtonArrow: { position: 'absolute', right: 14, color: '#53627b', fontSize: 20, fontWeight: '700' },
   calendar: { marginTop: 4, padding: 12, borderRadius: 12, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e1e7f0' },
   calendarHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
