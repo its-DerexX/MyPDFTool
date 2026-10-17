@@ -416,8 +416,7 @@ export default function App() {
   const [einbauWerkNr, setEinbauWerkNr] = useState('');
   const [ausbauWerkNr, setAusbauWerkNr] = useState('');
   const [gatewayWerkNr, setGatewayWerkNr] = useState('');
-  const [gatewayType, setGatewayType] = useState('Funk');
-  const [gatewayTypeMenuOpen, setGatewayTypeMenuOpen] = useState(false);
+  const [gatewayType, setGatewayType] = useState('Draht');
   const [editBusy, setEditBusy] = useState(false);
   const [einbauEnabled, setEinbauEnabled] = useState(false);
   const [ausbauEnabled, setAusbauEnabled] = useState(false);
@@ -458,7 +457,6 @@ export default function App() {
         return;
       }
       setGatewayWerkNr(gateway);
-      setGatewayTypeMenuOpen(true);
     }
   }
 
@@ -563,8 +561,7 @@ export default function App() {
       setEinbauWerkNr('');
       setAusbauWerkNr('');
       setGatewayWerkNr('');
-      setGatewayType('Funk');
-      setGatewayTypeMenuOpen(false);
+      setGatewayType('Draht');
       setWpEnabled(false);
       setPvEnabled(false);
       setHaushaltEnabled(false);
@@ -704,15 +701,11 @@ export default function App() {
             </View>
             {gatewayWerkNr.trim() && <>
               <Text style={styles.label}>Übertragung Gateway</Text>
-              <Pressable style={styles.dropdown} onPress={() => setGatewayTypeMenuOpen(value => !value)}>
-                <Text style={styles.dropdownText}>{gatewayType}</Text>
-                <Text style={styles.dropdownArrow}>{gatewayTypeMenuOpen ? '⌃' : '⌄'}</Text>
-              </Pressable>
-              {gatewayTypeMenuOpen && <View style={styles.dropdownMenu}>
-                {['Funk', 'Draht'].map(type => <Pressable key={type} style={styles.dropdownItem} onPress={() => { setGatewayType(type); setGatewayTypeMenuOpen(false); }}>
-                  <Text style={[styles.dropdownItemText, gatewayType === type && styles.dropdownItemTextSelected]}>{type}</Text>
+              <View style={styles.gatewayTypeRow}>
+                {['Draht', 'Funk'].map(type => <Pressable key={type} style={[styles.gatewayTypeButton, gatewayType === type && styles.gatewayTypeButtonSelected]} onPress={() => setGatewayType(type)}>
+                  <Text style={[styles.gatewayTypeText, gatewayType === type && styles.gatewayTypeTextSelected]}>{type}</Text>
                 </Pressable>)}
-              </View>}
+              </View>
             </>}
           </View>
 
@@ -791,10 +784,10 @@ const styles = StyleSheet.create({
   scanButton: { minHeight: 50, width: 76, borderRadius: 10, backgroundColor: '#2457d6', alignItems: 'center', justifyContent: 'center' },
   scanButtonText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   gatewayTypeRow: { flexDirection: 'row', gap: 8 },
-  gatewayTypeButton: { flex: 1, minHeight: 44, borderRadius: 10, borderWidth: 1, borderColor: '#cbd5e5', backgroundColor: '#f8fafc', alignItems: 'center', justifyContent: 'center' },
-  gatewayTypeButtonSelected: { borderColor: '#2457d6', backgroundColor: '#e8efff' },
-  gatewayTypeText: { color: '#53627b', fontSize: 15, fontWeight: '700' },
-  gatewayTypeTextSelected: { color: '#2457d6' },
+  gatewayTypeButton: { flex: 1, minHeight: 44, borderRadius: 10, borderWidth: 1, borderColor: '#cbd5e5', backgroundColor: '#eef2f8', alignItems: 'center', justifyContent: 'center' },
+  gatewayTypeButtonSelected: { borderColor: '#2457d6', backgroundColor: '#2457d6' },
+  gatewayTypeText: { color: '#172033', fontSize: 15, fontWeight: '700' },
+  gatewayTypeTextSelected: { color: '#fff' },
   scannerScreen: { flex: 1, backgroundColor: '#000' },
   camera: { flex: 1 },
   scannerOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', paddingTop: 54, paddingHorizontal: 24, backgroundColor: 'rgba(0,0,0,0.18)' },
