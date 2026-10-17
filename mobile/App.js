@@ -21,6 +21,8 @@ import { zipSync } from 'fflate';
 
 const templateAsset = require('./assets/blanko.pdf');
 const FORM_FONT_SIZE = 9.268;
+const GATEWAY_QR_CODE_TYPES = ['qr'];
+const WORK_NUMBER_BARCODE_TYPES = ['ean13', 'ean8', 'code128', 'code39', 'itf14', 'upc_a', 'upc_e'];
 
 async function readPdf(uri) {
   return new Uint8Array(await new File(uri).arrayBuffer());
@@ -303,9 +305,13 @@ function formatPdfDate(date) {
 }
 
 function extractGatewayWerkNr(value) {
-  const payload = String(value || '');
-  const match = payload.match(/EEMH[\s:#-]*(\d+)/i);
-  return match ? `EEMH${match[1]}`.toUpperCase() : '';
+  let payload = String(value || '');
+  try {
+    payload = decodeURIComponent(payload);
+  } catch (_) {}
+  const normalized = payload.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const match = normalized.match(/EEMH\d+/);
+  return match ? match[0] : '';
 }
 
 function MiniCalendar({ value, onChange }) {
@@ -749,7 +755,7 @@ export default function App() {
               style={styles.camera}
               facing="back"
               onBarcodeScanned={scannerTarget ? handleBarcodeScanned : undefined}
-              barcodeScannerSettings={{ barcodeTypes: scannerTarget === 'gateway' ? ['qr'] : ['ean13', 'ean8', 'code128', 'code39', 'itf14', 'upc_a', 'upc_e'] }}
+              barcodeScannerSettings={{ barcodeTypes: scannerTarget === 'gateway' ? GATEWAY_QR_CODE_TYPES : WORK_NUMBER_BARCODE_TYPES }}
             />
             <View style={styles.scannerOverlay}>
               <View style={styles.scannerHeader}>
