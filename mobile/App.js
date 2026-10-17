@@ -953,15 +953,15 @@ export default function App() {
               <View style={[styles.checkbox, zlgEnabled && styles.checkboxChecked]}>{zlgEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
               <Text style={styles.checkboxLabel}>ZLG</Text>
             </Pressable>
-            <Pressable style={styles.checkboxGridItem} onPress={() => setWsdsEnabled(value => !value)}>
-              <View style={[styles.checkbox, wsdsEnabled && styles.checkboxChecked]}>{wsdsEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
-              <Text style={styles.checkboxLabel}>WS/DS</Text>
-            </Pressable>
             <Pressable style={styles.checkboxGridItem} onPress={() => setRseEnabled(value => !value)}>
               <View style={[styles.checkbox, rseEnabled && styles.checkboxChecked]}>
                 {rseEnabled && <Text style={styles.checkmark}>✓</Text>}
               </View>
               <Text style={styles.checkboxLabel}>RSE</Text>
+            </Pressable>
+            <Pressable style={styles.checkboxGridItem} onPress={() => setWsdsEnabled(value => !value)}>
+              <View style={[styles.checkbox, wsdsEnabled && styles.checkboxChecked]}>{wsdsEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
+              <Text style={styles.checkboxLabel}>WS/DS</Text>
             </Pressable>
             </View>
 
