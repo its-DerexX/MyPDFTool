@@ -1035,7 +1035,7 @@ const styles = StyleSheet.create({
   dropdownItemTextSelected: { color: '#2457d6', fontWeight: '700' },
   input: { minHeight: 50, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, paddingHorizontal: 14, color: '#172033', fontSize: 16, backgroundColor: '#f8fafc' },
   scannerInputRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  scannerInput: { flex: 1, paddingHorizontal: 6, fontSize: 14.5, fontWeight: '600', letterSpacing: -0.1 },
+  scannerInput: { flex: 1, paddingHorizontal: 6, fontSize: 14.5, fontWeight: '600', letterSpacing: -0.1, textAlign: 'center' },
   readOnlyInput: { color: '#53627b' },
   scanButton: { minHeight: 44, width: 70, marginLeft: 'auto', borderRadius: 10, backgroundColor: '#2457d6', alignItems: 'center', justifyContent: 'center' },
   scanButtonText: { color: '#fff', fontSize: 13, fontWeight: '700' },
