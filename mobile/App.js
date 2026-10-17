@@ -448,6 +448,9 @@ export default function App() {
     else {
       const gateway = normalizeGatewayWerkNr(data);
       if (!gateway) {
+        // Stop scanning before showing the error. Otherwise the same invalid
+        // QR code is read again immediately and reopens the alert.
+        setScannerTarget(null);
         Alert.alert('Gateway-QR-Code nicht erkannt', 'Im QR-Code wurde keine Werknummer im Format EEMH########## gefunden.');
         return;
       }
