@@ -509,7 +509,7 @@ async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnable
     F: einbauEnabled ? 'x' : '',
     G: ausbauEnabled ? 'x' : '',
     M: zusammenlegungEnabled ? 'x' : '',
-    'Werk Nr_2': einbauEnabled ? einbauWerkNr.trim() : '',
+    'Werk Nr_2': einbauWerkNr.trim(),
     'Werk Nr': ausbauWerkNr.trim()
   };
   for (let index = 1; index <= 5; index++) {
