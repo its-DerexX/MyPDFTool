@@ -23,7 +23,8 @@ const templateAsset = require('./assets/blanko.pdf');
 const FORM_FONT_SIZE = 9.268;
 const GATEWAY_2D_CODE_TYPES = ['qr', 'datamatrix', 'aztec', 'pdf417'];
 const WORK_NUMBER_BARCODE_TYPES = ['ean13', 'ean8', 'code128', 'code39', 'itf14', 'upc_a', 'upc_e'];
-const DEFAULT_REMARK_PRESETS = ['Antenne außen', 'Antenne innen (Unterputzschrank)', 'iMSys RSE nachgerüstet', 'Kaskade Z1', 'Kaskade Z2'].sort((a, b) => a.localeCompare(b, 'de', { sensitivity: 'base' }));
+const RSE_REMARK_PRESET = 'iMSys RSE nachgerüstet';
+const DEFAULT_REMARK_PRESETS = ['Antenne außen', 'Antenne innen (Unterputzschrank)', RSE_REMARK_PRESET, 'Kaskade Z1', 'Kaskade Z2'].sort((a, b) => a.localeCompare(b, 'de', { sensitivity: 'base' }));
 const LEGACY_REMARK_PRESETS = new Set(['Keine Besonderheiten', 'Kunde informiert', 'Zugang nicht möglich']);
 const REMARK_PRESETS_FILE = new File(Paths.document, 'MyPDFTool-Bemerkungsvorlagen.json');
 
@@ -614,6 +615,18 @@ export default function App() {
   const [remarkMenuOpen, setRemarkMenuOpen] = useState(false);
   const [newRemarkPreset, setNewRemarkPreset] = useState('');
   const [newRemarkPresetOpen, setNewRemarkPresetOpen] = useState(false);
+  const [rseRemarkAuto, setRseRemarkAuto] = useState(false);
+
+  React.useEffect(() => {
+    const onlyRse = rseEnabled && !einbauEnabled && !ausbauEnabled && !szwEnabled && !zlgEnabled;
+    if (onlyRse && !bemerkungen.trim()) {
+      setBemerkungen(RSE_REMARK_PRESET);
+      setRseRemarkAuto(true);
+    } else if (!onlyRse && rseRemarkAuto && bemerkungen === RSE_REMARK_PRESET) {
+      setBemerkungen('');
+      setRseRemarkAuto(false);
+    }
+  }, [rseEnabled, einbauEnabled, ausbauEnabled, szwEnabled, zlgEnabled, bemerkungen, rseRemarkAuto]);
 
   async function openScanner(target) {
     let permission = cameraPermission;
@@ -777,6 +790,7 @@ export default function App() {
       setSelectedDate(null);
       setCalendarOpen(false);
       setBemerkungen('');
+      setRseRemarkAuto(false);
       setRemarkMenuOpen(false);
       setNewRemarkPreset('');
       setNewRemarkPresetOpen(false);
@@ -790,6 +804,7 @@ export default function App() {
     const nextPresets = [...new Set([...remarkPresets, value])].sort((a, b) => a.localeCompare(b, 'de', { sensitivity: 'base' }));
     setRemarkPresets(nextPresets);
     setBemerkungen(value);
+    setRseRemarkAuto(false);
     setNewRemarkPreset('');
     setNewRemarkPresetOpen(false);
     setRemarkMenuOpen(false);
@@ -1012,7 +1027,7 @@ export default function App() {
             <Text style={styles.sectionTitle}>Bemerkungen:</Text>
             <TextInput
               value={bemerkungen}
-              onChangeText={setBemerkungen}
+              onChangeText={value => { setBemerkungen(value); setRseRemarkAuto(false); }}
               placeholder="Bemerkung eingeben"
               placeholderTextColor="#8a96aa"
               style={styles.remarksInput}
@@ -1024,7 +1039,7 @@ export default function App() {
               <View style={styles.remarkPresetArrow}><Text style={styles.remarkPresetArrowText}>{remarkMenuOpen ? '⌃' : '⌄'}</Text></View>
             </Pressable>
             {remarkMenuOpen && <View style={styles.remarkPresetMenu}>
-              {remarkPresets.map(preset => <Pressable key={preset} style={styles.remarkPresetItem} onPress={() => { setBemerkungen(preset); setRemarkMenuOpen(false); }}>
+              {remarkPresets.map(preset => <Pressable key={preset} style={styles.remarkPresetItem} onPress={() => { setBemerkungen(preset); setRseRemarkAuto(false); setRemarkMenuOpen(false); }}>
                 <Text style={styles.remarkPresetText}>{preset}</Text>
               </Pressable>)}
             </View>}
