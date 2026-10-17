@@ -510,7 +510,7 @@ async function updateGatewayAnnotation(targetPdf, gatewayWerkNr, gatewayType) {
   page.drawText(text, { x: 83.25, y: 421.17, size: 15, font, color: rgb(0, 0, 0) });
 }
 
-async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnabled, ausbauEnabled, zusammenlegungEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues, bemerkungen) {
+async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnabled, ausbauEnabled, zusammenlegungEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, allgemeinEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues, bemerkungen) {
   const targetPdf = await PDFDocument.load(await readPdf(sourceUri));
   const targetForm = targetPdf.getForm();
   const [bemerkungen1, bemerkungen2] = splitRemarkFields(bemerkungen);
@@ -520,6 +520,7 @@ async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnable
     '9': wpEnabled ? 'x' : '',
     '10': gewerbeEnabled ? 'x' : '',
     '11': baustromEnabled ? 'x' : '',
+    '12': allgemeinEnabled ? 'x' : '',
     '13': klemmeEnabled ? 'x' : '',
     F: einbauEnabled ? 'x' : '',
     G: ausbauEnabled ? 'x' : '',
@@ -604,6 +605,7 @@ export default function App() {
   const [haushaltEnabled, setHaushaltEnabled] = useState(false);
   const [gewerbeEnabled, setGewerbeEnabled] = useState(false);
   const [baustromEnabled, setBaustromEnabled] = useState(false);
+  const [allgemeinEnabled, setAllgemeinEnabled] = useState(false);
   const [klemmeEnabled, setKlemmeEnabled] = useState(false);
   const [scannerTarget, setScannerTarget] = useState(null);
   const scannerLockRef = React.useRef(false);
@@ -715,7 +717,7 @@ export default function App() {
   async function fillRsePdf() {
     const effectiveEinbau = einbauEnabled || szwEnabled;
     const effectiveAusbau = ausbauEnabled || szwEnabled;
-    const hasSelection = rseEnabled || effectiveEinbau || effectiveAusbau || zlgEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || klemmeEnabled;
+    const hasSelection = rseEnabled || effectiveEinbau || effectiveAusbau || zlgEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || allgemeinEnabled || klemmeEnabled;
     if (!selectedEditPdf || !hasSelection || !selectedDate || (rseEnabled && (!selectedGroup || !werkNr.trim()))) return;
     setEditBusy(true);
     try {
@@ -728,7 +730,7 @@ export default function App() {
         ? `${cleanFilenamePart(sourceBaseName)}, iMSys RSE nachgerüstet.pdf`
         : `${cleanFilenamePart(sourceBaseName)}_bearbeitet.pdf`;
       const outputFile = new File(outputDirectory, outputFilename);
-      outputFile.write(await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, effectiveEinbau, effectiveAusbau, zlgEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues, bemerkungen));
+      outputFile.write(await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, effectiveEinbau, effectiveAusbau, zlgEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, allgemeinEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues, bemerkungen));
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(outputFile.uri, {
           dialogTitle: 'Bearbeitete PDF Vorschau',
@@ -786,6 +788,7 @@ export default function App() {
       setHaushaltEnabled(false);
       setGewerbeEnabled(false);
       setBaustromEnabled(false);
+      setAllgemeinEnabled(false);
       setKlemmeEnabled(false);
       setSelectedDate(null);
       setCalendarOpen(false);
@@ -1016,9 +1019,13 @@ export default function App() {
                 <View style={[styles.checkbox, baustromEnabled && styles.checkboxChecked]}>{baustromEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
                 <Text style={styles.checkboxLabel}>Baustrom</Text>
               </Pressable>
+              <Pressable style={styles.checkboxGridItem} onPress={() => setAllgemeinEnabled(value => !value)}>
+                <View style={[styles.checkbox, allgemeinEnabled && styles.checkboxChecked]}>{allgemeinEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
+                <Text style={styles.checkboxLabel}>Allgemein</Text>
+              </Pressable>
               <Pressable style={styles.checkboxGridItem} onPress={() => setKlemmeEnabled(value => !value)}>
                 <View style={[styles.checkbox, klemmeEnabled && styles.checkboxChecked]}>{klemmeEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
-                <Text style={styles.checkboxLabel}>Klemme</Text>
+                <Text style={styles.checkboxLabel}>Steckklemme</Text>
               </Pressable>
             </View>
           </View>
@@ -1060,7 +1067,7 @@ export default function App() {
             </View>}
           </View>
 
-          <Pressable style={[styles.button, styles.primary, (() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || klemmeEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || (rseEnabled && !werkNr.trim()) || editBusy; })() && styles.disabled]} disabled={(() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || klemmeEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || (rseEnabled && !werkNr.trim()) || editBusy; })()} onPress={fillRsePdf}>
+          <Pressable style={[styles.button, styles.primary, (() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || allgemeinEnabled || klemmeEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || (rseEnabled && !werkNr.trim()) || editBusy; })() && styles.disabled]} disabled={(() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || allgemeinEnabled || klemmeEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || (rseEnabled && !werkNr.trim()) || editBusy; })()} onPress={fillRsePdf}>
             {editBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>PDF erstellen und speichern</Text>}
           </Pressable>
         </ScrollView>
