@@ -576,13 +576,13 @@ export default function App() {
               style={styles.camera}
               facing="back"
               onBarcodeScanned={scannerTarget ? handleBarcodeScanned : undefined}
-              barcodeScannerSettings={{ barcodeTypes: scannerTarget === 'gateway' ? ['qr'] : ['ean13', 'ean8', 'code128', 'code39', 'itf14', 'upc_a', 'upc_e'] }}
+              barcodeScannerSettings={{ barcodeTypes: ['qr', 'aztec', 'dataMatrix', 'pdf417', 'ean13', 'ean8', 'code128', 'code39', 'itf14', 'upc_a', 'upc_e'] }}
             />
             <View style={styles.scannerOverlay}>
               <View style={styles.scannerHeader}>
                 <Text style={styles.scannerEyebrow}>SCANNER</Text>
                 <Text style={styles.scannerTitle}>{scannerTarget === 'einbau' ? 'Werk Nr. Einbau' : scannerTarget === 'ausbau' ? 'Werk Nr. Ausbau' : 'Werk Nr. Gateway'}</Text>
-                <Text style={styles.scannerHint}>{scannerTarget === 'gateway' ? 'Nur QR-Code in den Rahmen halten.' : 'Nur Barcode in den Rahmen halten.'}</Text>
+                <Text style={styles.scannerHint}>{scannerTarget === 'gateway' ? 'QR-Code in den Rahmen halten.' : 'QR-Code oder Barcode in den Rahmen halten.'}</Text>
               </View>
               <View style={styles.scanFrame}>
                 <View style={styles.scanFrameLine} />
