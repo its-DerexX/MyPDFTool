@@ -688,7 +688,11 @@ export default function App() {
       outputDirectory.create({ idempotent: true, intermediates: true });
       const sourceName = selectedEditPdf.name || 'Zaehlerwechselbeleg.pdf';
       const sourceBaseName = sourceName.replace(/\.pdf$/i, '');
-      const outputFile = new File(outputDirectory, `${cleanFilenamePart(sourceBaseName)}_bearbeitet.pdf`);
+      const rseOnly = rseEnabled && !effectiveEinbau && !effectiveAusbau && !zlgEnabled;
+      const outputFilename = rseOnly
+        ? `${cleanFilenamePart(sourceBaseName)}, iMSys RSE nachgerüstet.pdf`
+        : `${cleanFilenamePart(sourceBaseName)}_bearbeitet.pdf`;
+      const outputFile = new File(outputDirectory, outputFilename);
       outputFile.write(await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, effectiveEinbau, effectiveAusbau, zlgEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues));
       Alert.alert('Gespeichert', 'Die bearbeitete PDF wurde in „MyPDF-Ausgabe“ gespeichert.');
     } catch (error) {
