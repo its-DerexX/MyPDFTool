@@ -636,7 +636,7 @@ export default function App() {
   const [newRemarkPresetOpen, setNewRemarkPresetOpen] = useState(false);
   const [rseRemarkAuto, setRseRemarkAuto] = useState(false);
   const selectedFileNameInputRef = React.useRef(null);
-  const werkNrInputRef = React.useRef(null);
+  const [werkNrSelection, setWerkNrSelection] = useState({ start: 0, end: 0 });
 
   function moveSelectedFileNameCursorToEnd(value) {
     const end = String(value || '').length;
@@ -645,7 +645,7 @@ export default function App() {
 
   function moveWerkNrCursorToEnd(value) {
     const end = String(value || '').length;
-    setTimeout(() => werkNrInputRef.current?.setNativeProps({ selection: { start: end, end } }), 0);
+    setWerkNrSelection({ start: end, end });
   }
 
   React.useEffect(() => {
@@ -967,10 +967,10 @@ export default function App() {
 
               <Text style={styles.label}>Werk Nr.</Text>
               <TextInput
-                ref={werkNrInputRef}
                 value={werkNr}
                 onChangeText={value => { const digits = value.replace(/[^0-9]/g, ''); setWerkNr(digits); moveWerkNrCursorToEnd(digits); }}
                 onFocus={() => moveWerkNrCursorToEnd(werkNr)}
+                selection={werkNrSelection}
                 placeholder="Werknummer eingeben"
                 placeholderTextColor="#8a96aa"
                 style={[styles.input, styles.rseWerkNrInput]}
@@ -1184,7 +1184,7 @@ const styles = StyleSheet.create({
   selectedFileTitle: { marginTop: 24, color: '#53627b', fontSize: 13, fontWeight: '600' },
   selectedFileName: { marginTop: 4, color: '#172033', fontSize: 16, fontWeight: '600' },
   selectedFileNameInput: { marginTop: 4, minHeight: 42, paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, color: '#172033', fontSize: 16, fontWeight: '600', backgroundColor: '#fff' },
-  rseWerkNrInput: { minHeight: 64, paddingVertical: 10 },
+  rseWerkNrInput: { minHeight: 84, height: 84, paddingVertical: 10, lineHeight: 24 },
   note: { marginTop: 28, color: '#71809a', lineHeight: 20, textAlign: 'center' },
   remarksInput: { minHeight: 78, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, color: '#172033', fontSize: 16, backgroundColor: '#f8fafc' },
   remarkPresetToggle: { marginTop: 10, minHeight: 48, paddingHorizontal: 12, borderWidth: 1, borderColor: '#2457d6', borderRadius: 10, backgroundColor: '#2457d6', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
