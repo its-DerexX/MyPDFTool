@@ -2,6 +2,7 @@
 import { ActivityIndicator, Alert, Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as Sharing from 'expo-sharing';
 import { Directory, File, Paths } from 'expo-file-system';
 import { Asset } from 'expo-asset';
 import {
@@ -694,7 +695,15 @@ export default function App() {
         : `${cleanFilenamePart(sourceBaseName)}_bearbeitet.pdf`;
       const outputFile = new File(outputDirectory, outputFilename);
       outputFile.write(await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, effectiveEinbau, effectiveAusbau, zlgEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues));
-      Alert.alert('Gespeichert', 'Die bearbeitete PDF wurde in „MyPDF-Ausgabe“ gespeichert.');
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(outputFile.uri, {
+          dialogTitle: 'Bearbeitete PDF Vorschau',
+          mimeType: 'application/pdf',
+          UTI: 'com.adobe.pdf'
+        });
+      } else {
+        Alert.alert('Gespeichert', 'Die bearbeitete PDF wurde in „MyPDF-Ausgabe“ gespeichert.');
+      }
     } catch (error) {
       Alert.alert('Fehler', error.message || 'Die PDF konnte nicht bearbeitet werden.');
     } finally {
