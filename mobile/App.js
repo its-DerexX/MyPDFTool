@@ -99,6 +99,12 @@ function cleanFilenamePart(value) {
   return String(value || '').replace(/[<>:"/\\|?*\u0000-\u001F]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function ensurePdfFilename(value, fallback) {
+  const cleaned = cleanFilenamePart(value).replace(/\.pdf$/i, '').trim();
+  const fallbackBase = cleanFilenamePart(fallback).replace(/\.pdf$/i, '').trim() || 'Zaehlerwechselbeleg';
+  return `${cleaned || fallbackBase}.pdf`;
+}
+
 function splitRemarkFields(value) {
   const words = String(value || '').trim().split(/\s+/).filter(Boolean);
   const lines = ['', ''];
@@ -588,6 +594,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [editScreen, setEditScreen] = useState(false);
   const [selectedEditPdf, setSelectedEditPdf] = useState(null);
+  const [selectedEditPdfName, setSelectedEditPdfName] = useState('');
   const [rseEnabled, setRseEnabled] = useState(false);
   const [groupMenuOpen, setGroupMenuOpen] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState(EEG_GROUPS[0]);
@@ -624,6 +631,7 @@ export default function App() {
   const [newRemarkPreset, setNewRemarkPreset] = useState('');
   const [newRemarkPresetOpen, setNewRemarkPresetOpen] = useState(false);
   const [rseRemarkAuto, setRseRemarkAuto] = useState(false);
+  const selectedFileNameInputRef = React.useRef(null);
 
   React.useEffect(() => {
     const onlyRse = rseEnabled && !einbauEnabled && !ausbauEnabled && !szwEnabled && !zlgEnabled;
@@ -733,7 +741,7 @@ export default function App() {
     try {
       const outputDirectory = new Directory(Paths.document, 'MyPDF-Ausgabe');
       outputDirectory.create({ idempotent: true, intermediates: true });
-      const sourceName = selectedEditPdf.name || 'Zaehlerwechselbeleg.pdf';
+      const sourceName = ensurePdfFilename(selectedEditPdfName, selectedEditPdf.name || 'Zaehlerwechselbeleg.pdf');
       const sourceBaseName = sourceName.replace(/\.pdf$/i, '');
       const rseOnly = rseEnabled && !effectiveEinbau && !effectiveAusbau && !zlgEnabled;
       const remarkFilenameSuffix = getRemarkFilenameSuffix(bemerkungen);
@@ -779,6 +787,7 @@ export default function App() {
       } catch (_) {}
       const detectedGroup = inferEegGroupFromFilename(selectedAsset.name || selectedAsset.uri || '');
       setSelectedEditPdf(selectedAsset);
+      setSelectedEditPdfName(selectedAsset.name || 'Zaehlerwechselbeleg.pdf');
       setRseEnabled(false);
       setSelectedGroup(detectedGroup || EEG_GROUPS[0]);
       setGroupAutoDetected(Boolean(detectedGroup));
@@ -873,7 +882,21 @@ export default function App() {
           <Text style={styles.title}>PDF bearbeiten</Text>
           <Text style={styles.subtitle}>Zählerwechselbeleg gezielt ausfüllen</Text>
           <Text style={styles.selectedFileTitle}>Ausgewählte PDF</Text>
-          <Text style={styles.selectedFileName}>{selectedEditPdf?.name || 'Keine PDF ausgewählt'}</Text>
+          <TextInput
+            ref={selectedFileNameInputRef}
+            value={selectedEditPdfName}
+            onChangeText={setSelectedEditPdfName}
+            onFocus={() => {
+              const end = selectedEditPdfName.length;
+              setTimeout(() => selectedFileNameInputRef.current?.setNativeProps({ selection: { start: end, end } }), 0);
+            }}
+            placeholder="Dateiname eingeben"
+            placeholderTextColor="#8a96aa"
+            style={styles.selectedFileNameInput}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="done"
+          />
 
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Datum</Text>
@@ -1136,6 +1159,7 @@ const styles = StyleSheet.create({
   file: { marginTop: 14, color: '#2457d6', fontSize: 14 },
   selectedFileTitle: { marginTop: 24, color: '#53627b', fontSize: 13, fontWeight: '600' },
   selectedFileName: { marginTop: 4, color: '#172033', fontSize: 16, fontWeight: '600' },
+  selectedFileNameInput: { marginTop: 4, minHeight: 42, paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, color: '#172033', fontSize: 16, fontWeight: '600', backgroundColor: '#fff' },
   note: { marginTop: 28, color: '#71809a', lineHeight: 20, textAlign: 'center' },
   remarksInput: { minHeight: 78, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, color: '#172033', fontSize: 16, backgroundColor: '#f8fafc' },
   remarkPresetToggle: { marginTop: 10, minHeight: 48, paddingHorizontal: 12, borderWidth: 1, borderColor: '#2457d6', borderRadius: 10, backgroundColor: '#2457d6', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
