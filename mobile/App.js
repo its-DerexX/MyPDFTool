@@ -109,6 +109,12 @@ function splitRemarkFields(value) {
   return lines;
 }
 
+function getRemarkFilenameSuffix(value) {
+  const normalizedRemark = String(value || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase('de-DE');
+  const filenameSuffixes = ['iMSys Kaskade Z1', 'iMSys Kaskade Z2', 'Kaskade Z1', 'Kaskade Z2'];
+  return filenameSuffixes.find(suffix => normalizedRemark.includes(suffix.toLocaleLowerCase('de-DE'))) || '';
+}
+
 function fileExtension(name) {
   const match = String(name || '').toLowerCase().match(/\.([a-z0-9]+)$/);
   return match ? match[1] : '';
@@ -730,9 +736,12 @@ export default function App() {
       const sourceName = selectedEditPdf.name || 'Zaehlerwechselbeleg.pdf';
       const sourceBaseName = sourceName.replace(/\.pdf$/i, '');
       const rseOnly = rseEnabled && !effectiveEinbau && !effectiveAusbau && !zlgEnabled;
-      const outputFilename = rseOnly
-        ? `${cleanFilenamePart(sourceBaseName)}, iMSys RSE nachgerüstet.pdf`
-        : `${cleanFilenamePart(sourceBaseName)}_bearbeitet.pdf`;
+      const remarkFilenameSuffix = getRemarkFilenameSuffix(bemerkungen);
+      const outputFilename = remarkFilenameSuffix
+        ? `${cleanFilenamePart(sourceBaseName)}, ${remarkFilenameSuffix}.pdf`
+        : rseOnly
+          ? `${cleanFilenamePart(sourceBaseName)}, iMSys RSE nachgerüstet.pdf`
+          : `${cleanFilenamePart(sourceBaseName)}_bearbeitet.pdf`;
       const outputFile = new File(outputDirectory, outputFilename);
       outputFile.write(await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, effectiveEinbau, effectiveAusbau, zlgEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, allgemeinEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues, bemerkungen));
       if (await Sharing.isAvailableAsync()) {
