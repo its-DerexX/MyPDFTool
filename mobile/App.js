@@ -629,6 +629,7 @@ export default function App() {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [selectedDate, setSelectedDate] = useState(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [bildnummer, setBildnummer] = useState('');
   const [bemerkungen, setBemerkungen] = useState('');
   const [remarkPresets, setRemarkPresets] = useState(DEFAULT_REMARK_PRESETS);
   const [remarkMenuOpen, setRemarkMenuOpen] = useState(false);
@@ -830,6 +831,7 @@ export default function App() {
       setKlemmeEnabled(false);
       setSelectedDate(null);
       setCalendarOpen(false);
+      setBildnummer('');
       setBemerkungen('');
       setRseRemarkAuto(false);
       setRemarkMenuOpen(false);
@@ -1089,6 +1091,19 @@ export default function App() {
                 <Text style={styles.checkboxLabel}>Steckklemme</Text>
               </Pressable>
             </View>
+          </View>
+
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Bildnummer:</Text>
+            <TextInput
+              value={bildnummer}
+              onChangeText={value => setBildnummer(value.replace(/[^0-9.]/g, ''))}
+              placeholder="Bildnummer eingeben"
+              placeholderTextColor="#8a96aa"
+              style={styles.input}
+              keyboardType="decimal-pad"
+              inputMode="decimal"
+            />
           </View>
 
           <View style={styles.card}>
