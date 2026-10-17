@@ -8,18 +8,11 @@ import { Asset } from 'expo-asset';
 import {
   PDFBool,
   PDFDocument,
-  PDFHexString,
   PDFName,
   PDFNumber,
   PDFString,
   StandardFonts,
-  beginText,
-  endText,
-  popGraphicsState,
-  pushGraphicsState,
-  setFontAndSize,
-  setTextMatrix,
-  showText
+  rgb
 } from 'pdf-lib';
 import pako from 'pako/dist/pako.cjs.js';
 import { zipSync } from 'fflate';
@@ -315,10 +308,6 @@ function escapePdfLiteral(value) {
     .replace(/\n/g, '\\n');
 }
 
-function asciiHex(value) {
-  return Array.from(String(value || ''), character => character.charCodeAt(0).toString(16).padStart(2, '0')).join('');
-}
-
 function replaceAppearanceText(targetPdf, field, value) {
   field.acroField.dict.set(PDFName.of('V'), PDFString.of(value));
   const widgets = field.acroField.getWidgets();
@@ -347,76 +336,35 @@ async function updateGatewayAnnotation(targetPdf, gatewayWerkNr, gatewayType) {
 
   const type = gatewayType === 'Draht' ? 'Draht' : 'Funk';
   const text = `SMGW ${gateway} ${type}`;
-  const page = targetPdf.getPages()[0];
   const context = targetPdf.context;
   const subtypeName = PDFName.of('Subtype');
   const contentsName = PDFName.of('Contents');
-  const annotationRect = { x: 83.25, y: 419.67, height: 17.25 };
-  const font = await targetPdf.embedFont(StandardFonts.Helvetica);
-  const width = Math.max(220.5, font.widthOfTextAtSize(text, 15) + 8);
-  const rect = context.obj([
-    annotationRect.x,
-    annotationRect.y,
-    annotationRect.x + width,
-    annotationRect.y + annotationRect.height
-  ]);
-  const appearance = context.formXObject([
-    pushGraphicsState(),
-    beginText(),
-    setFontAndSize('F1', 15),
-    setTextMatrix(1, 0, 0, 1, 0, 1.5),
-    showText(PDFHexString.of(asciiHex(text))),
-    endText(),
-    popGraphicsState()
-  ], {
-    BBox: [0, 0, width, annotationRect.height],
-    Matrix: [1, 0, 0, 1, 0, 0],
-    Resources: { Font: { F1: font.ref } }
-  });
-  const appearanceRef = context.register(appearance);
-  let annotationToUpdate = null;
+  const annotationName = PDFName.of('Annots');
 
-  const rawAnnots = page.node.get(PDFName.of('Annots'));
-  const annots = rawAnnots && context.lookup(rawAnnots);
-  if (annots?.asArray) {
-    for (const ref of annots.asArray()) {
+  // Remove the old FreeText overlay. Some mobile PDF viewers render its
+  // default white background in addition to its appearance stream.
+  for (const page of targetPdf.getPages()) {
+    const rawAnnots = page.node.get(annotationName);
+    const annots = rawAnnots && context.lookup(rawAnnots);
+    if (!annots?.asArray) continue;
+
+    const keptAnnotations = annots.asArray().filter(ref => {
       const annotation = context.lookup(ref);
-      if (!annotation?.get || annotation.get(subtypeName)?.toString() !== '/FreeText') continue;
+      if (annotation?.get(subtypeName)?.toString() !== '/FreeText') return true;
       const contents = annotation.get(contentsName);
       const currentText = contents?.decodeText ? contents.decodeText() : '';
-      if (/^SMGW\s+/i.test(currentText)) {
-        annotationToUpdate = annotation;
-        break;
-      }
+      return !/^SMGW\s+/i.test(currentText);
+    });
+    if (keptAnnotations.length !== annots.asArray().length) {
+      page.node.set(annotationName, context.obj(keptAnnotations));
     }
   }
 
-  if (!annotationToUpdate) {
-    annotationToUpdate = context.obj({
-      Type: PDFName.of('Annot'),
-      Subtype: PDFName.of('FreeText'),
-      P: page.ref,
-      F: PDFNumber.of(4),
-      Contents: PDFString.of(text),
-      CA: PDFNumber.of(1),
-      IT: PDFName.of('FreeTextTypewriter'),
-      BS: context.obj({ Type: PDFName.of('Border'), W: PDFNumber.of(0), S: PDFName.of('S') }),
-      Rotate: PDFNumber.of(0),
-      DA: PDFString.of('/F1 15 Tf 0 0 0 rg 0 0 0 RG '),
-      AP: context.obj({ N: appearanceRef }),
-      Rect: rect,
-      C: context.obj([0, 0, 0])
-    });
-    const annotationRef = context.register(annotationToUpdate);
-    const annotationArray = annots?.asArray ? annots : context.obj([]);
-    annotationArray.push(annotationRef);
-    page.node.set(PDFName.of('Annots'), annotationArray);
-  } else {
-    annotationToUpdate.set(contentsName, PDFString.of(text));
-    annotationToUpdate.set(PDFName.of('Rect'), rect);
-    annotationToUpdate.set(PDFName.of('DA'), PDFString.of('/F1 15 Tf 0 0 0 rg 0 0 0 RG '));
-    annotationToUpdate.set(PDFName.of('AP'), context.obj({ N: appearanceRef }));
-  }
+  // Draw the value into the page content so every PDF preview renders it
+  // consistently, without an annotation background or duplicate text.
+  const page = targetPdf.getPages()[0];
+  const font = await targetPdf.embedFont(StandardFonts.Helvetica);
+  page.drawText(text, { x: 83.25, y: 421.17, size: 15, font, color: rgb(0, 0, 0) });
 }
 
 async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnabled, ausbauEnabled, zusammenlegungEnabled, wpEnabled, pvEnabled, haushaltEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType) {
