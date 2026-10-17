@@ -509,7 +509,7 @@ async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnable
     F: einbauEnabled ? 'x' : '',
     G: ausbauEnabled ? 'x' : '',
     M: zusammenlegungEnabled ? 'x' : '',
-    'Werk Nr_2': einbauWerkNr.trim(),
+    'Werk Nr_2': einbauEnabled ? einbauWerkNr.trim() : '',
     'Werk Nr': ausbauWerkNr.trim()
   };
   for (let index = 1; index <= 5; index++) {
@@ -528,7 +528,7 @@ async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnable
   }
   fields.zst0 = '';
   fields.htzst0 = '';
-  if (einbauWerkNr.trim()) {
+  if (einbauEnabled && einbauWerkNr.trim()) {
     for (const standField of SZE_STAND_FIELDS[szeType] || []) {
       fields[standField.marker] = String(szeStandValues?.[standField.field] || '').trim();
       fields[standField.field] = standField.label;
@@ -888,7 +888,7 @@ export default function App() {
                 <TextInput value={einbauWerkNr} onChangeText={setEinbauWerkNr} placeholder="Werknummer eingeben oder scannen" placeholderTextColor="#8a96aa" style={[styles.input, styles.scannerInput]} autoCapitalize="characters" />
                 <Pressable style={styles.scanButton} onPress={() => openScanner('einbau')}><Text style={styles.scanButtonText}>Scannen</Text></Pressable>
               </View>
-              {einbauWerkNr.trim() && <>
+              {einbauEnabled && einbauWerkNr.trim() && <>
                 <Text style={styles.label}>Einbauart</Text>
                 <View style={styles.szaTypeRow}>
                   {SZE_TYPES.map(type => <Pressable key={type} style={[styles.gatewayTypeButton, szeType === type && styles.gatewayTypeButtonSelected]} onPress={() => setSzeType(type)}>
