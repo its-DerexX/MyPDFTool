@@ -427,6 +427,7 @@ export default function App() {
   const [pvEnabled, setPvEnabled] = useState(false);
   const [haushaltEnabled, setHaushaltEnabled] = useState(false);
   const [scannerTarget, setScannerTarget] = useState(null);
+  const scannerLockRef = React.useRef(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [selectedDate, setSelectedDate] = useState(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -438,25 +439,31 @@ export default function App() {
       Alert.alert('Kamerazugriff benötigt', 'Bitte erlaube den Kamerazugriff, damit ein Barcode gescannt werden kann.');
       return;
     }
+    scannerLockRef.current = false;
     setScannerTarget(target);
   }
 
   function handleBarcodeScanned({ data }) {
-    if (!data || !scannerTarget) return;
-    if (scannerTarget === 'einbau') setEinbauWerkNr(data.trim());
-    else if (scannerTarget === 'ausbau') setAusbauWerkNr(data.trim());
+    if (!data || !scannerTarget || scannerLockRef.current) return;
+    scannerLockRef.current = true;
+    const target = scannerTarget;
+    setScannerTarget(null);
+
+    if (target === 'einbau') setEinbauWerkNr(data.trim());
+    else if (target === 'ausbau') setAusbauWerkNr(data.trim());
     else {
       const gateway = normalizeGatewayWerkNr(data);
       if (!gateway) {
-        // Stop scanning before showing the error. Otherwise the same invalid
-        // QR code is read again immediately and reopens the alert.
-        setScannerTarget(null);
         Alert.alert('Gateway-QR-Code nicht erkannt', 'Im QR-Code wurde keine Werknummer im Format EEMH########## gefunden.');
         return;
       }
       setGatewayWerkNr(gateway);
       setGatewayTypeMenuOpen(true);
     }
+  }
+
+  function closeScanner() {
+    scannerLockRef.current = true;
     setScannerTarget(null);
   }
 
@@ -570,7 +577,7 @@ export default function App() {
   if (editScreen) {
     return (
       <SafeAreaView style={styles.safe}>
-        <Modal visible={Boolean(scannerTarget)} animationType="slide" onRequestClose={() => setScannerTarget(null)}>
+        <Modal visible={Boolean(scannerTarget)} animationType="slide" onRequestClose={closeScanner}>
           <View style={styles.scannerScreen}>
             <CameraView
               style={styles.camera}
@@ -588,7 +595,7 @@ export default function App() {
                 <View style={styles.scanFrameLine} />
               </View>
               <View style={styles.scannerStatus}><View style={styles.scannerStatusDot} /><Text style={styles.scannerStatusText}>Bereit zum Erfassen</Text></View>
-              <Pressable style={styles.scannerCloseButton} onPress={() => setScannerTarget(null)}>
+              <Pressable style={styles.scannerCloseButton} onPress={closeScanner}>
                 <Text style={styles.primaryButtonText}>Abbrechen</Text>
               </Pressable>
             </View>
