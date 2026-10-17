@@ -1,5 +1,5 @@
 ﻿import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Sharing from 'expo-sharing';
@@ -847,7 +847,17 @@ export default function App() {
             </View>
           </View>
         </Modal>
-        <ScrollView contentContainerStyle={styles.editContainer}>
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoiding}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+        >
+          <ScrollView
+            contentContainerStyle={styles.editContainer}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            automaticallyAdjustKeyboardInsets
+          >
           <Pressable onPress={() => setEditScreen(false)} style={styles.backButton}>
             <Text style={styles.backText}>‹ Zurück</Text>
           </Pressable>
@@ -1074,7 +1084,8 @@ export default function App() {
           <Pressable style={[styles.button, styles.primary, (() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || allgemeinEnabled || klemmeEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || (rseEnabled && !werkNr.trim()) || editBusy; })() && styles.disabled]} disabled={(() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || allgemeinEnabled || klemmeEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || (rseEnabled && !werkNr.trim()) || editBusy; })()} onPress={fillRsePdf}>
             {editBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>PDF erstellen und speichern</Text>}
           </Pressable>
-        </ScrollView>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     );
   }
@@ -1102,6 +1113,7 @@ export default function App() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#f5f7fb' },
+  keyboardAvoiding: { flex: 1 },
   container: { flex: 1, padding: 24, justifyContent: 'center' },
   title: { fontSize: 34, fontWeight: '700', color: '#172033' },
   subtitle: { fontSize: 21, marginTop: 6, color: '#3d4c68' },
@@ -1131,7 +1143,7 @@ const styles = StyleSheet.create({
   savePresetAction: { minHeight: 44, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#2457d6', alignItems: 'center', justifyContent: 'center' },
   savePresetActionText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   version: { position: 'absolute', right: 12, bottom: 8, color: '#9aa5b8', fontSize: 11 },
-  editContainer: { padding: 24, paddingBottom: 40 },
+  editContainer: { padding: 24, paddingBottom: 300 },
   backButton: { alignSelf: 'flex-start', paddingVertical: 8, paddingRight: 18 },
   backText: { color: '#2457d6', fontSize: 17, fontWeight: '600' },
   card: { marginTop: 26, padding: 20, borderRadius: 16, backgroundColor: '#fff', shadowColor: '#172033', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
