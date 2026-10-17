@@ -961,8 +961,6 @@ export default function App() {
                   <Text style={styles.dropdownItemText}>{group}</Text>
                 </Pressable>)}
               </View>}
-              {groupAutoDetected && <Text style={styles.autoGroupHint}>Automatisch aus dem Dateinamen erkannt.</Text>}
-
               <Text style={styles.label}>Werk Nr.</Text>
               <TextInput
                 value={werkNr}
@@ -973,7 +971,7 @@ export default function App() {
                 keyboardType="numeric"
                 inputMode="numeric"
               />
-              <Text style={styles.hint}>Typ: LCR 160 · Code: {`613/${String(5 + Number(selectedGroup.slice(-2))).padStart(2, '0')}`} · Verwendungsart: {selectedGroup}</Text>
+              <Text style={styles.hint}>Typ: LCR 160 · Code: {`613/${String(5 + Number(selectedGroup.slice(-2))).padStart(2, '0')}`}</Text>
             </>}
           </View>
 
