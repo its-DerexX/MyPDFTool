@@ -334,6 +334,11 @@ function formatPdfDate(date) {
   return `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}.${date.getFullYear()}`;
 }
 
+function formatBildnummerDate(date) {
+  if (!date) return '';
+  return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+}
+
 function extractGatewayWerkNr(value) {
   let payload = String(value || '');
   try {
@@ -526,7 +531,7 @@ async function updateGatewayAnnotation(targetPdf, gatewayWerkNr, gatewayType) {
   page.drawText(text, { x: 83.25, y: 421.17, size: 15, font, color: rgb(0, 0, 0) });
 }
 
-async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnabled, ausbauEnabled, zusammenlegungEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, allgemeinEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues, bemerkungen) {
+async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnabled, ausbauEnabled, zusammenlegungEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, allgemeinEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues, bemerkungen, bildnummer) {
   const targetPdf = await PDFDocument.load(await readPdf(sourceUri));
   const targetForm = targetPdf.getForm();
   const [bemerkungen1, bemerkungen2] = splitRemarkFields(bemerkungen);
@@ -544,7 +549,8 @@ async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnable
     'Werk Nr_2': einbauWerkNr.trim(),
     'Werk Nr': ausbauWerkNr.trim(),
     'Bemerkungen 1': bemerkungen1,
-    'Bemerkungen 2': bemerkungen2
+    'Bemerkungen 2': bemerkungen2,
+    Schausteller: selectedDate ? `${formatBildnummerDate(selectedDate)}_${String(bildnummer || '').trim()}` : ''
   };
   for (let index = 1; index <= 5; index++) {
     fields[`zst${index}`] = '';
@@ -767,7 +773,7 @@ export default function App() {
             ? `${cleanFilenamePart(sourceBaseName)}.pdf`
             : `${cleanFilenamePart(sourceBaseName)}_bearbeitet.pdf`;
       const outputFile = new File(outputDirectory, outputFilename);
-      outputFile.write(await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, effectiveEinbau, effectiveAusbau, zlgEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, allgemeinEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues, bemerkungen));
+      outputFile.write(await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, effectiveEinbau, effectiveAusbau, zlgEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, allgemeinEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues, bemerkungen, bildnummer));
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(outputFile.uri, {
           dialogTitle: 'Bearbeitete PDF Vorschau',
