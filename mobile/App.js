@@ -741,15 +741,21 @@ export default function App() {
     try {
       const outputDirectory = new Directory(Paths.document, 'MyPDF-Ausgabe');
       outputDirectory.create({ idempotent: true, intermediates: true });
-      const sourceName = ensurePdfFilename(selectedEditPdfName, selectedEditPdf.name || 'Zaehlerwechselbeleg.pdf');
+      const originalSourceName = selectedEditPdf.name || 'Zaehlerwechselbeleg.pdf';
+      const sourceName = ensurePdfFilename(selectedEditPdfName, originalSourceName);
       const sourceBaseName = sourceName.replace(/\.pdf$/i, '');
+      const originalBaseName = cleanFilenamePart(originalSourceName.replace(/\.pdf$/i, ''));
+      const customFilenameBase = cleanFilenamePart(selectedEditPdfName).replace(/\.pdf$/i, '').trim();
+      const hasCustomFilename = Boolean(customFilenameBase && customFilenameBase !== originalBaseName);
       const rseOnly = rseEnabled && !effectiveEinbau && !effectiveAusbau && !zlgEnabled;
       const remarkFilenameSuffix = getRemarkFilenameSuffix(bemerkungen);
       const outputFilename = remarkFilenameSuffix
         ? `${cleanFilenamePart(sourceBaseName)}, ${remarkFilenameSuffix}.pdf`
         : rseOnly
           ? `${cleanFilenamePart(sourceBaseName)}, iMSys RSE nachgerüstet.pdf`
-          : `${cleanFilenamePart(sourceBaseName)}_bearbeitet.pdf`;
+          : hasCustomFilename
+            ? `${cleanFilenamePart(sourceBaseName)}.pdf`
+            : `${cleanFilenamePart(sourceBaseName)}_bearbeitet.pdf`;
       const outputFile = new File(outputDirectory, outputFilename);
       outputFile.write(await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, effectiveEinbau, effectiveAusbau, zlgEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, allgemeinEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues, bemerkungen));
       if (await Sharing.isAvailableAsync()) {
