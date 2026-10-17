@@ -1000,7 +1000,7 @@ const styles = StyleSheet.create({
   szaStandGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 },
   szaStandItem: { flex: 1, minWidth: 120 },
   szaStandLabel: { color: '#53627b', fontSize: 14, fontWeight: '700', marginBottom: 6 },
-  szaStandInput: { minHeight: 50, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, paddingHorizontal: 12, color: '#172033', fontSize: 16, backgroundColor: '#f8fafc' },
+  szaStandInput: { minHeight: 42, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, paddingHorizontal: 12, color: '#172033', fontSize: 16, backgroundColor: '#f8fafc' },
   scannerScreen: { flex: 1, backgroundColor: '#000' },
   camera: { flex: 1 },
   scannerOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', paddingTop: 54, paddingHorizontal: 24, backgroundColor: 'rgba(0,0,0,0.18)' },
