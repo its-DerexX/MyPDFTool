@@ -244,6 +244,20 @@ async function createFilledPdf(sourceUri, outputDirectory) {
 }
 
 const EEG_GROUPS = Array.from({ length: 12 }, (_, index) => `EEG Gr.${String(index + 1).padStart(2, '0')}`);
+const SZA_TYPES = ['DS', 'ZRZ', 'DT', 'ALT'];
+const SZA_STAND_FIELDS = {
+  DS: [{ field: 'htzst1', marker: 'zst1', label: '1.8.0' }],
+  ZRZ: [
+    { field: 'htzst1', marker: 'zst1', label: '1.8.0' },
+    { field: 'htzst2', marker: 'zst2', label: '2.8.0' }
+  ],
+  DT: [
+    { field: 'htzst1', marker: 'zst1', label: '1.8.1' },
+    { field: 'htzst2', marker: 'zst2', label: '1.8.2' },
+    { field: 'htzst3', marker: 'zst3', label: '2.8.0' }
+  ],
+  ALT: [{ field: 'htzst1', marker: 'zst1', label: '' }]
+};
 const EEG_LOCATION_GROUPS = [
   ['EEG Gr.01', ['Kirchbracht', 'Lichenroth', 'Oberreichenbach', 'Völzberg', 'Wettges', 'Radmühl']],
   ['EEG Gr.02', ['Birstein', 'Bösgesäß', 'Böß-Gesäß', 'Bös-Gesäß', 'Fischborn', 'Hettersroth', 'Illnhausen', 'Mauswinkel', 'Obersotzbach', 'Unterreichenbach', 'Untersotzbach', 'Wüstwillenroth', 'Hellstein', 'Schlierbach', 'Udenhain', 'Katholisch-Willenroth']],
@@ -467,7 +481,7 @@ async function updateGatewayAnnotation(targetPdf, gatewayWerkNr, gatewayType) {
   page.drawText(text, { x: 83.25, y: 421.17, size: 15, font, color: rgb(0, 0, 0) });
 }
 
-async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnabled, ausbauEnabled, zusammenlegungEnabled, wpEnabled, pvEnabled, haushaltEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType) {
+async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnabled, ausbauEnabled, zusammenlegungEnabled, wpEnabled, pvEnabled, haushaltEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues) {
   const targetPdf = await PDFDocument.load(await readPdf(sourceUri));
   const targetForm = targetPdf.getForm();
   const fields = {
@@ -480,6 +494,16 @@ async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnable
     'Werk Nr_2': einbauWerkNr.trim(),
     'Werk Nr': ausbauWerkNr.trim()
   };
+  for (let index = 1; index <= 5; index++) {
+    fields[`zst${index}`] = '';
+    fields[`htzst${index}`] = '';
+  }
+  if (ausbauWerkNr.trim()) {
+    for (const standField of SZA_STAND_FIELDS[szaType] || []) {
+      fields[standField.marker] = 'x';
+      fields[standField.field] = String(szaStandValues?.[standField.field] || '').trim();
+    }
+  }
   if (group && werkNr.trim()) {
     const groupNumber = Number(group.slice(-2));
     Object.assign(fields, {
@@ -519,6 +543,8 @@ export default function App() {
   const [ausbauWerkNr, setAusbauWerkNr] = useState('');
   const [gatewayWerkNr, setGatewayWerkNr] = useState('');
   const [gatewayType, setGatewayType] = useState('Draht');
+  const [szaType, setSzaType] = useState('DS');
+  const [szaStandValues, setSzaStandValues] = useState({});
   const [editBusy, setEditBusy] = useState(false);
   const [einbauEnabled, setEinbauEnabled] = useState(false);
   const [ausbauEnabled, setAusbauEnabled] = useState(false);
@@ -628,7 +654,7 @@ export default function App() {
       const sourceName = selectedEditPdf.name || 'Zaehlerwechselbeleg.pdf';
       const sourceBaseName = sourceName.replace(/\.pdf$/i, '');
       const outputFile = new File(outputDirectory, `${cleanFilenamePart(sourceBaseName)}_bearbeitet.pdf`);
-      outputFile.write(await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, effectiveEinbau, effectiveAusbau, zlgEnabled, wpEnabled, pvEnabled, haushaltEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType));
+      outputFile.write(await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, effectiveEinbau, effectiveAusbau, zlgEnabled, wpEnabled, pvEnabled, haushaltEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues));
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(outputFile.uri, {
           dialogTitle: 'Bearbeitete PDF Vorschau',
@@ -668,6 +694,8 @@ export default function App() {
       setAusbauWerkNr('');
       setGatewayWerkNr('');
       setGatewayType('Draht');
+      setSzaType('DS');
+      setSzaStandValues({});
       setWpEnabled(false);
       setPvEnabled(false);
       setHaushaltEnabled(false);
@@ -796,6 +824,28 @@ export default function App() {
               <TextInput value={ausbauWerkNr} onChangeText={setAusbauWerkNr} placeholder="Werknummer eingeben oder scannen" placeholderTextColor="#8a96aa" style={[styles.input, styles.scannerInput]} autoCapitalize="characters" />
               <Pressable style={styles.scanButton} onPress={() => openScanner('ausbau')}><Text style={styles.scanButtonText}>Scannen</Text></Pressable>
             </View>
+            {ausbauWerkNr.trim() && <>
+              <Text style={styles.label}>Ausbauart</Text>
+              <View style={styles.szaTypeRow}>
+                {SZA_TYPES.map(type => <Pressable key={type} style={[styles.gatewayTypeButton, szaType === type && styles.gatewayTypeButtonSelected]} onPress={() => setSzaType(type)}>
+                  <Text style={[styles.gatewayTypeText, szaType === type && styles.gatewayTypeTextSelected]}>{type}</Text>
+                </Pressable>)}
+              </View>
+              <View style={styles.szaStandGrid}>
+                {(SZA_STAND_FIELDS[szaType] || []).map(standField => <View key={standField.field} style={styles.szaStandItem}>
+                  {standField.label ? <Text style={styles.szaStandLabel}>{standField.label}</Text> : null}
+                  <TextInput
+                    value={szaStandValues[standField.field] || ''}
+                    onChangeText={value => setSzaStandValues(current => ({ ...current, [standField.field]: szaType === 'ALT' ? value.replace(/[^0-9,]/g, '') : value.replace(/[^0-9]/g, '') }))}
+                    placeholder={standField.label ? 'Stand eingeben' : 'Stand eingeben'}
+                    placeholderTextColor="#8a96aa"
+                    style={styles.szaStandInput}
+                    keyboardType={szaType === 'ALT' ? 'decimal-pad' : 'numeric'}
+                    inputMode={szaType === 'ALT' ? 'decimal' : 'numeric'}
+                  />
+                </View>)}
+              </View>
+            </>}
             <Text style={styles.label}>Werk Nr. Einbau</Text>
             <View style={styles.scannerInputRow}>
               <TextInput value={einbauWerkNr} onChangeText={setEinbauWerkNr} placeholder="Werknummer eingeben oder scannen" placeholderTextColor="#8a96aa" style={[styles.input, styles.scannerInput]} autoCapitalize="characters" />
@@ -895,6 +945,11 @@ const styles = StyleSheet.create({
   gatewayTypeButtonSelected: { borderColor: '#2457d6', backgroundColor: '#2457d6' },
   gatewayTypeText: { color: '#172033', fontSize: 15, fontWeight: '700' },
   gatewayTypeTextSelected: { color: '#fff' },
+  szaTypeRow: { flexDirection: 'row', gap: 6 },
+  szaStandGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 },
+  szaStandItem: { flex: 1, minWidth: 120 },
+  szaStandLabel: { color: '#53627b', fontSize: 14, fontWeight: '700', marginBottom: 6 },
+  szaStandInput: { minHeight: 50, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, paddingHorizontal: 12, color: '#172033', fontSize: 16, backgroundColor: '#f8fafc' },
   scannerScreen: { flex: 1, backgroundColor: '#000' },
   camera: { flex: 1 },
   scannerOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', paddingTop: 54, paddingHorizontal: 24, backgroundColor: 'rgba(0,0,0,0.18)' },
