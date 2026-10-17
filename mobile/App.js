@@ -754,7 +754,7 @@ export default function App() {
     const effectiveEinbau = einbauEnabled || szwEnabled;
     const effectiveAusbau = ausbauEnabled || szwEnabled;
     const hasSelection = rseEnabled || effectiveEinbau || effectiveAusbau || zlgEnabled || wsdsEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || allgemeinEnabled || klemmeEnabled;
-    if (!selectedEditPdf || !hasSelection || !selectedDate || (rseEnabled && (!selectedGroup || !werkNr.trim()))) return;
+    if (!selectedEditPdf || !hasSelection || !selectedDate || !bildnummer.trim() || (rseEnabled && (!selectedGroup || !werkNr.trim()))) return;
     setEditBusy(true);
     try {
       const outputDirectory = new Directory(Paths.document, 'MyPDF-Ausgabe');
@@ -1156,7 +1156,7 @@ export default function App() {
             </View>}
           </View>
 
-          <Pressable style={[styles.button, styles.primary, (() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wsdsEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || allgemeinEnabled || klemmeEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || (rseEnabled && !werkNr.trim()) || editBusy; })() && styles.disabled]} disabled={(() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wsdsEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || allgemeinEnabled || klemmeEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || (rseEnabled && !werkNr.trim()) || editBusy; })()} onPress={fillRsePdf}>
+          <Pressable style={[styles.button, styles.primary, (() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wsdsEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || allgemeinEnabled || klemmeEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || !bildnummer.trim() || (rseEnabled && !werkNr.trim()) || editBusy; })() && styles.disabled]} disabled={(() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wsdsEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || allgemeinEnabled || klemmeEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || !bildnummer.trim() || (rseEnabled && !werkNr.trim()) || editBusy; })()} onPress={fillRsePdf}>
             {editBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>PDF erstellen und speichern</Text>}
           </Pressable>
           </ScrollView>
