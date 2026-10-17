@@ -1097,7 +1097,7 @@ export default function App() {
             <Text style={styles.sectionTitle}>Bildnummer:</Text>
             <TextInput
               value={bildnummer}
-              onChangeText={value => setBildnummer(value.replace(/[^0-9.]/g, ''))}
+              onChangeText={value => setBildnummer(value.replace(/,/g, '.').replace(/[^0-9.]/g, ''))}
               placeholder="Bildnummer eingeben"
               placeholderTextColor="#8a96aa"
               style={styles.input}
