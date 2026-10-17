@@ -845,8 +845,7 @@ export default function App() {
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Werknummern</Text>
-            <Text style={styles.sectionHint}>Für SZE, SZA, SZW und ZLG können Ausbau und Einbau unabhängig erfasst werden.</Text>
+            <Text style={styles.sectionTitle}>Zählernummern:</Text>
             <View style={[styles.subsectionCard, styles.subsectionAusbau]}>
               <Text style={[styles.subsectionTitle, styles.subsectionTitleAusbau]}>Ausbau</Text>
               <Text style={styles.label}>Werk Nr. Ausbau</Text>
