@@ -962,11 +962,12 @@ export default function App() {
               <Text style={styles.label}>Werk Nr.</Text>
               <TextInput
                 value={werkNr}
-                onChangeText={setWerkNr}
+                onChangeText={value => setWerkNr(value.replace(/[^0-9]/g, ''))}
                 placeholder="Werknummer eingeben"
                 placeholderTextColor="#8a96aa"
                 style={styles.input}
-                autoCapitalize="characters"
+                keyboardType="numeric"
+                inputMode="numeric"
               />
               <Text style={styles.hint}>Typ: LCR 160 · Code: {`613/${String(5 + Number(selectedGroup.slice(-2))).padStart(2, '0')}`} · Verwendungsart: {selectedGroup}</Text>
             </>}
