@@ -635,17 +635,11 @@ export default function App() {
   const [newRemarkPreset, setNewRemarkPreset] = useState('');
   const [newRemarkPresetOpen, setNewRemarkPresetOpen] = useState(false);
   const [rseRemarkAuto, setRseRemarkAuto] = useState(false);
-  const selectedFileNameInputRef = React.useRef(null);
-  const [werkNrSelection, setWerkNrSelection] = useState({ start: 0, end: 0 });
+  const [selectedFileNameSelection, setSelectedFileNameSelection] = useState({ start: 0, end: 0 });
 
   function moveSelectedFileNameCursorToEnd(value) {
     const end = String(value || '').length;
-    setTimeout(() => selectedFileNameInputRef.current?.setNativeProps({ selection: { start: end, end } }), 0);
-  }
-
-  function moveWerkNrCursorToEnd(value) {
-    const end = String(value || '').length;
-    setWerkNrSelection({ start: end, end });
+    setSelectedFileNameSelection({ start: end, end });
   }
 
   React.useEffect(() => {
@@ -809,6 +803,7 @@ export default function App() {
       const detectedGroup = inferEegGroupFromFilename(selectedAsset.name || selectedAsset.uri || '');
       setSelectedEditPdf(selectedAsset);
       setSelectedEditPdfName(removePdfExtension(selectedAsset.name || 'Zaehlerwechselbeleg.pdf'));
+      setSelectedFileNameSelection({ start: 0, end: 0 });
       setRseEnabled(false);
       setSelectedGroup(detectedGroup || EEG_GROUPS[0]);
       setGroupAutoDetected(Boolean(detectedGroup));
@@ -904,16 +899,19 @@ export default function App() {
           <Text style={styles.subtitle}>Zählerwechselbeleg gezielt ausfüllen</Text>
           <Text style={styles.selectedFileTitle}>Ausgewählte PDF</Text>
           <TextInput
-            ref={selectedFileNameInputRef}
             value={selectedEditPdfName}
             onChangeText={value => { setSelectedEditPdfName(value); moveSelectedFileNameCursorToEnd(value); }}
             onFocus={() => moveSelectedFileNameCursorToEnd(selectedEditPdfName)}
+            selection={selectedFileNameSelection}
             placeholder="Dateiname eingeben"
             placeholderTextColor="#8a96aa"
             style={styles.selectedFileNameInput}
             autoCapitalize="none"
             autoCorrect={false}
             returnKeyType="done"
+            multiline
+            numberOfLines={2}
+            textAlignVertical="top"
           />
 
           <View style={styles.card}>
@@ -968,17 +966,12 @@ export default function App() {
               <Text style={styles.label}>Werk Nr.</Text>
               <TextInput
                 value={werkNr}
-                onChangeText={value => { const digits = value.replace(/[^0-9]/g, ''); setWerkNr(digits); moveWerkNrCursorToEnd(digits); }}
-                onFocus={() => moveWerkNrCursorToEnd(werkNr)}
-                selection={werkNrSelection}
+                onChangeText={value => setWerkNr(value.replace(/[^0-9]/g, ''))}
                 placeholder="Werknummer eingeben"
                 placeholderTextColor="#8a96aa"
-                style={[styles.input, styles.rseWerkNrInput]}
+                style={styles.input}
                 keyboardType="numeric"
                 inputMode="numeric"
-                multiline
-                numberOfLines={2}
-                textAlignVertical="top"
               />
               <Text style={styles.hint}>Typ: LCR 160 · Code: {`613/${String(5 + Number(selectedGroup.slice(-2))).padStart(2, '0')}`} · Verwendungsart: {selectedGroup}</Text>
             </>}
@@ -1183,8 +1176,7 @@ const styles = StyleSheet.create({
   file: { marginTop: 14, color: '#2457d6', fontSize: 14 },
   selectedFileTitle: { marginTop: 24, color: '#53627b', fontSize: 13, fontWeight: '600' },
   selectedFileName: { marginTop: 4, color: '#172033', fontSize: 16, fontWeight: '600' },
-  selectedFileNameInput: { marginTop: 4, minHeight: 42, paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, color: '#172033', fontSize: 16, fontWeight: '600', backgroundColor: '#fff' },
-  rseWerkNrInput: { minHeight: 84, height: 84, paddingVertical: 10, lineHeight: 24 },
+  selectedFileNameInput: { marginTop: 4, minHeight: 84, height: 84, paddingHorizontal: 10, paddingVertical: 10, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, color: '#172033', fontSize: 16, fontWeight: '600', lineHeight: 24, backgroundColor: '#fff' },
   note: { marginTop: 28, color: '#71809a', lineHeight: 20, textAlign: 'center' },
   remarksInput: { minHeight: 78, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, color: '#172033', fontSize: 16, backgroundColor: '#f8fafc' },
   remarkPresetToggle: { marginTop: 10, minHeight: 48, paddingHorizontal: 12, borderWidth: 1, borderColor: '#2457d6', borderRadius: 10, backgroundColor: '#2457d6', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
