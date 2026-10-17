@@ -21,7 +21,7 @@ import { zipSync } from 'fflate';
 
 const templateAsset = require('./assets/blanko.pdf');
 const FORM_FONT_SIZE = 9.268;
-const GATEWAY_QR_CODE_TYPES = ['qr'];
+const GATEWAY_2D_CODE_TYPES = ['qr', 'datamatrix', 'aztec', 'pdf417'];
 const WORK_NUMBER_BARCODE_TYPES = ['ean13', 'ean8', 'code128', 'code39', 'itf14', 'upc_a', 'upc_e'];
 
 async function readPdf(uri) {
@@ -755,13 +755,13 @@ export default function App() {
               style={styles.camera}
               facing="back"
               onBarcodeScanned={scannerTarget ? handleBarcodeScanned : undefined}
-              barcodeScannerSettings={{ barcodeTypes: scannerTarget === 'gateway' ? GATEWAY_QR_CODE_TYPES : WORK_NUMBER_BARCODE_TYPES }}
+              barcodeScannerSettings={{ barcodeTypes: scannerTarget === 'gateway' ? GATEWAY_2D_CODE_TYPES : WORK_NUMBER_BARCODE_TYPES }}
             />
             <View style={styles.scannerOverlay}>
               <View style={styles.scannerHeader}>
                 <Text style={styles.scannerEyebrow}>SCANNER</Text>
                 <Text style={styles.scannerTitle}>{scannerTarget === 'einbau' ? 'Werk Nr. Einbau' : scannerTarget === 'ausbau' ? 'Werk Nr. Ausbau' : 'Werk Nr. Gateway'}</Text>
-                <Text style={styles.scannerHint}>{scannerTarget === 'gateway' ? 'QR-Code in den Rahmen halten.' : 'Barcode in den Rahmen halten.'}</Text>
+                <Text style={styles.scannerHint}>{scannerTarget === 'gateway' ? 'QR-/2D-Code in den Rahmen halten.' : 'Barcode in den Rahmen halten.'}</Text>
               </View>
               <View style={styles.scanFrame}>
                 <View style={styles.scanFrameLine} />
