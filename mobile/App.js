@@ -242,6 +242,30 @@ async function createFilledPdf(sourceUri, outputDirectory) {
 }
 
 const EEG_GROUPS = Array.from({ length: 12 }, (_, index) => `EEG Gr.${String(index + 1).padStart(2, '0')}`);
+const EEG_LOCATION_GROUPS = [
+  ['EEG Gr.01', ['Kirchbracht', 'Lichenroth', 'Oberreichenbach', 'Völzberg', 'Wettges', 'Radmühl']],
+  ['EEG Gr.02', ['Birstein', 'Bösgesäß', 'Böß-Gesäß', 'Bös-Gesäß', 'Fischborn', 'Hettersroth', 'Illnhausen', 'Mauswinkel', 'Obersotzbach', 'Unterreichenbach', 'Untersotzbach', 'Wüstwillenroth', 'Hellstein', 'Schlierbach', 'Udenhain', 'Katholisch-Willenroth']],
+  ['EEG Gr.03', ['Helfersdorf', 'Leisenwald', 'Waldensberg', 'Wittgenborn', 'Wächtersbach', 'Neuenschmidten', 'Spielberg', 'Streitberg']],
+  ['EEG Gr.04', ['Breitenborn A.W.', 'Gettenbach', 'Hain-Gründau', 'Lieblos', 'Mittel-Gründau', 'Niedergründau', 'Rothenbergen']],
+  ['EEG Gr.05', ['Aufenau', 'Hesseldorf', 'Neudorf', 'Weilers', 'Orb']],
+  ['EEG Gr.06', ['Mernes', 'Burgjoß', 'Burgjoss']],
+  ['EEG Gr.07', ['Bieber', 'Breitenborn A.B.', 'Kassel', 'Lanzingen', 'Roßbach', 'Wirthheim', 'Wirtsheim', 'Wirtheim']],
+  ['EEG Gr.08', ['Lettgenbrunn', 'Oberndorf', 'Pfaffenhausen', 'Flörsbach', 'Kempfenbrunn', 'Lohrhaupten', 'Mosborn']],
+  ['EEG Gr.09', ['Gondsroth', 'Neuenhaßlau', 'Niedermittlau']],
+  ['EEG Gr.10', ['Somborn']],
+  ['EEG Gr.11', ['Altenmittlau', 'Bernbach', 'Neuses']],
+  ['EEG Gr.12', ['Gelnhausen', 'Altenhaßlau', 'Eidengesäß', 'Geislitz', 'Großenhausen', 'Lützelhausen', 'Horbach']]
+];
+
+const EEG_LOCATION_LOOKUP = EEG_LOCATION_GROUPS.flatMap(([group, locations]) => locations.map(location => [normalizeLocation(location), group]));
+
+function inferEegGroupFromFilename(filename) {
+  const normalizedFilename = normalizeLocation(filename);
+  return EEG_LOCATION_LOOKUP
+    .filter(([location]) => normalizedFilename.includes(location))
+    .sort((left, right) => right[0].length - left[0].length)[0]?.[1] || '';
+}
+
 const MONTH_NAMES = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
 const WEEKDAY_NAMES = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 
@@ -412,6 +436,7 @@ export default function App() {
   const [rseEnabled, setRseEnabled] = useState(false);
   const [groupMenuOpen, setGroupMenuOpen] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState(EEG_GROUPS[0]);
+  const [groupAutoDetected, setGroupAutoDetected] = useState(false);
   const [werkNr, setWerkNr] = useState('');
   const [einbauWerkNr, setEinbauWerkNr] = useState('');
   const [ausbauWerkNr, setAusbauWerkNr] = useState('');
@@ -550,9 +575,13 @@ export default function App() {
       copyToCacheDirectory: true
     });
     if (!result.canceled) {
-      setSelectedEditPdf(result.assets[0]);
+      const selectedAsset = result.assets[0];
+      const detectedGroup = inferEegGroupFromFilename(selectedAsset.name || selectedAsset.uri || '');
+      setSelectedEditPdf(selectedAsset);
       setRseEnabled(false);
-      setSelectedGroup(EEG_GROUPS[0]);
+      setSelectedGroup(detectedGroup || EEG_GROUPS[0]);
+      setGroupAutoDetected(Boolean(detectedGroup));
+      setGroupMenuOpen(false);
       setWerkNr('');
       setEinbauEnabled(false);
       setAusbauEnabled(false);
@@ -663,10 +692,11 @@ export default function App() {
                 <Text style={styles.dropdownArrow}>{groupMenuOpen ? '⌃' : '⌄'}</Text>
               </Pressable>
               {groupMenuOpen && <View style={styles.dropdownMenu}>
-                {EEG_GROUPS.map(group => <Pressable key={group} style={styles.dropdownItem} onPress={() => { setSelectedGroup(group); setGroupMenuOpen(false); }}>
+                {EEG_GROUPS.map(group => <Pressable key={group} style={styles.dropdownItem} onPress={() => { setSelectedGroup(group); setGroupAutoDetected(false); setGroupMenuOpen(false); }}>
                   <Text style={styles.dropdownItemText}>{group}</Text>
                 </Pressable>)}
               </View>}
+              {groupAutoDetected && <Text style={styles.autoGroupHint}>Automatisch aus dem Dateinamen erkannt.</Text>}
 
               <Text style={styles.label}>Werk Nr.</Text>
               <TextInput
@@ -802,6 +832,7 @@ const styles = StyleSheet.create({
   scannerStatusText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   scannerCloseButton: { position: 'absolute', bottom: 42, left: 24, right: 24, minHeight: 52, borderRadius: 12, backgroundColor: '#2457d6', alignItems: 'center', justifyContent: 'center' },
   hint: { marginTop: 16, color: '#71809a', fontSize: 13, lineHeight: 19 },
+  autoGroupHint: { marginTop: 8, color: '#2457d6', fontSize: 13, fontWeight: '600' },
   calendarHint: { marginBottom: 8, color: '#71809a', fontSize: 13, lineHeight: 18 },
   dateValue: { marginLeft: 'auto', color: '#2457d6', fontSize: 16, fontWeight: '600' },
   dateButton: { minHeight: 50, marginTop: 14, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f8fafc' },
