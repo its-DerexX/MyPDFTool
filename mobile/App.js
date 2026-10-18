@@ -1,16 +1,17 @@
 ﻿import React, { useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import * as DocumentPicker from 'expo-document-picker';
+import { useEffect } from 'react';
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import * as Sharing from 'expo-sharing';
 import { Directory, File, Paths } from 'expo-file-system';
 import { Asset } from 'expo-asset';
 import {
   PDFBool,
   PDFDocument,
+  PDFFont,
   PDFName,
   PDFNumber,
   PDFString,
+  StandardFontEmbedder,
   StandardFonts,
   degrees,
   drawText,
@@ -20,13 +21,50 @@ import pako from 'pako/dist/pako.cjs.js';
 import { zipSync } from 'fflate';
 
 const templateAsset = require('./assets/blanko.pdf');
-const FORM_FONT_SIZE = 9.268;
+const FORM_FONT_SIZE = 0;
+const CHECKBOX_FONT_SIZE = 9;
+const PDF_CHECKBOX_FIELDS = new Set([
+  'Herrn', 'Frau', 'Herrn und Frau', 'An', 'Sonderablesegebiet',
+  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R',
+  ...Array.from({ length: 16 }, (_, index) => String(index + 1))
+]);
+// All small text fields in the template are checkbox slots. They are rendered
+// statically whenever the app changes them, so no viewer has to interpret a
+// text-field appearance or an interactive checkbox state.
+const STATIC_CHECKBOX_FIELDS = PDF_CHECKBOX_FIELDS;
 const GATEWAY_2D_CODE_TYPES = ['qr', 'datamatrix', 'aztec', 'pdf417'];
 const WORK_NUMBER_BARCODE_TYPES = ['ean13', 'ean8', 'code128', 'code39', 'itf14', 'upc_a', 'upc_e'];
 const RSE_REMARK_PRESET = 'iMSys RSE nachgerüstet';
-const DEFAULT_REMARK_PRESETS = ['Antenne außen', 'Antenne innen (Unterputzschrank)', RSE_REMARK_PRESET, 'Kaskade Z1', 'Kaskade Z2'].sort((a, b) => a.localeCompare(b, 'de', { sensitivity: 'base' }));
+const DEFAULT_REMARK_PRESETS = ['Antenne außen', 'Antenne innen (Unterputzschrank)', RSE_REMARK_PRESET, 'Kaskade Z1', 'Kaskade Z2', 'Meterpay'].sort((a, b) => a.localeCompare(b, 'de', { sensitivity: 'base' }));
 const LEGACY_REMARK_PRESETS = new Set(['Keine Besonderheiten', 'Kunde informiert', 'Zugang nicht möglich']);
 const REMARK_PRESETS_FILE = new File(Paths.document, 'MyPDFTool-Bemerkungsvorlagen.json');
+const SOURCE_DIRECTORY_NAME = 'MyPDF-Quellen';
+const EDIT_DIRECTORY_NAME = 'MyPDF-Ausgabe';
+const FINISHED_DIRECTORY_NAME = 'MyPDF-Fertig';
+
+function getAppDirectory(name) {
+  const directory = new Directory(Paths.document, name);
+  directory.create({ idempotent: true, intermediates: true });
+  return directory;
+}
+
+function confirmFileReplacement(file) {
+  if (!file.exists) return Promise.resolve(true);
+  return new Promise(resolve => Alert.alert(
+    'Datei bereits vorhanden',
+    `Die Datei „${file.name}“ existiert bereits. Soll sie ersetzt werden?`,
+    [
+      { text: 'Behalten', style: 'cancel', onPress: () => resolve(false) },
+      { text: 'Ersetzen', style: 'destructive', onPress: () => resolve(true) }
+    ],
+    { cancelable: false }
+  ));
+}
+
+function saveFileBytes(file, bytes) {
+  file.create({ overwrite: true, intermediates: true });
+  file.write(bytes);
+}
 
 async function readPdf(uri) {
   return new Uint8Array(await new File(uri).arrayBuffer());
@@ -121,8 +159,12 @@ function splitRemarkFields(value) {
 
 function getRemarkFilenameSuffix(value) {
   const normalizedRemark = String(value || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase('de-DE');
-  const filenameSuffixes = ['iMSys Kaskade Z1', 'iMSys Kaskade Z2', 'Kaskade Z1', 'Kaskade Z2'];
+  const filenameSuffixes = ['iMSys Kaskade Z1', 'iMSys Kaskade Z2', 'Kaskade Z1', 'Kaskade Z2', 'Meterpay'];
   return filenameSuffixes.find(suffix => normalizedRemark.includes(suffix.toLocaleLowerCase('de-DE'))) || '';
+}
+
+function getSourceFilenamePlace(values) {
+  return values['Ortsteil  FlurstückNr  Etage'] || values['Ort'] || values['Ort_2'] || '';
 }
 
 function fileExtension(name) {
@@ -240,14 +282,62 @@ function parseSourceData(text) {
   };
 }
 
+function parseManualSourceData(text) {
+  const lines = String(text || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  if (lines.length !== 3 && lines.length !== 4) {
+    throw new Error('Bitte genau 3 Zeilen (Name, Adresse, PLZ/Ort) oder 4 Zeilen (mit Firma) eingeben.');
+  }
+  const hasCompany = lines.length === 4;
+  const nameParts = lines[0].split(/\s+/).filter(Boolean);
+  const customer = {
+    vorname: nameParts.slice(0, -1).join(' '),
+    name: nameParts[nameParts.length - 1] || '',
+    firma: hasCompany ? lines[1] : '',
+    strasse: '',
+    hausnummer: '',
+    plz: '',
+    ort: ''
+  };
+  const addressLine = lines[hasCompany ? 2 : 1];
+  const address = parseAddressLine(addressLine);
+  if (address) {
+    customer.strasse = address.street;
+    customer.hausnummer = address.houseNumber;
+  } else {
+    customer.strasse = addressLine;
+  }
+  const postal = parsePostalLine(lines[hasCompany ? 3 : 2]);
+  if (postal) {
+    customer.plz = postal[1];
+    customer.ort = postal[2];
+  } else {
+    customer.ort = lines[hasCompany ? 3 : 2];
+  }
+  const customerLocation = resolvePostalLocation(customer.plz, customer.ort);
+  return {
+    'Name': customer.name,
+    'Vorname': customer.vorname,
+    'Geburtsdatum bei Privatpersonen bzw RegistergerichtRegisternummer der Firma': customer.firma,
+    'Straße': customer.strasse,
+    'HausNr': customer.hausnummer,
+    'Postleitzahl_2': customer.plz,
+    'Ort_2': customer.plz ? customerLocation.gemeinde : customer.ort,
+    'Telefon Fax EMail': '',
+    R: '',
+    'Straße ggf Anschlussnutzer': customer.strasse,
+    'HausNr ggf Anschlussnutzer': customer.hausnummer,
+    'Postleitzahl': customer.plz,
+    'Ort': customer.plz ? customerLocation.gemeinde : customer.ort,
+    'Ortsteil  FlurstückNr  Etage': customerLocation.ortsteil
+  };
+}
+
 function valueAfter(lines, label) {
   const index = lines.findIndex(line => line.startsWith(label));
   return index < 0 ? '' : lines[index].slice(label.length).trim();
 }
 
-async function createFilledPdf(sourceUri, outputDirectory) {
-  const sourceText = await extractPdfText(sourceUri);
-  const values = parseSourceData(sourceText);
+async function createFilledPdfFromValues(values) {
   const template = await Asset.loadAsync(templateAsset);
   const targetPdf = await PDFDocument.load(await readPdf(template[0].localUri || template[0].uri));
   const targetForm = targetPdf.getForm();
@@ -257,22 +347,123 @@ async function createFilledPdf(sourceUri, outputDirectory) {
     try {
       const field = targetForm.getTextField(fieldName);
       field.setText(value || '');
-      field.setFontSize(FORM_FONT_SIZE);
+      field.setFontSize(PDF_CHECKBOX_FIELDS.has(fieldName) ? CHECKBOX_FONT_SIZE : FORM_FONT_SIZE);
       filled++;
     } catch (_) {}
   }
-
   if (filled === 0) throw new Error('Die Quelldatei konnte nicht gelesen werden. Bitte die Antragsdaten-PDF auswählen.');
 
-  // Keep the existing AcroForm widgets and let the PDF viewer render the values,
-  // just as it does when a user fills the original blank form manually.
-  targetForm.acroForm.dict.set(PDFName.of('NeedAppearances'), PDFBool.True);
-  const outputBytes = await targetPdf.save();
+  await updateAutoSizedFormAppearances(targetPdf, targetForm);
+  const outputBytes = await targetPdf.save({ updateFieldAppearances: false });
   const address = [values['Straße ggf Anschlussnutzer'], values['HausNr ggf Anschlussnutzer']]
     .filter(Boolean).join(' ');
-  const place = values['Ortsteil  FlurstückNr  Etage'] || values['Ort'];
+  const place = getSourceFilenamePlace(values);
   const filename = [values.Name, address, place].map(cleanFilenamePart).filter(Boolean).join(', ') || 'Zaehlerwechselbeleg';
-  return { filename: `${filename}.pdf`, bytes: outputBytes, filled };
+  return { filename: `${filename}, .pdf`, bytes: outputBytes, filled };
+}
+
+async function updateAutoSizedFormAppearances(targetPdf, targetForm) {
+  const fontResources = targetPdf.context.lookup(targetForm.acroForm.dict.get(PDFName.of('DR')))?.get(PDFName.of('Font'));
+  const arialRef = fontResources && targetPdf.context.lookup(fontResources).get(PDFName.of('Arial'));
+  const font = arialRef
+    ? PDFFont.of(arialRef, targetPdf, new StandardFontEmbedder(StandardFonts.Helvetica, 'Arial'))
+    : await targetPdf.embedFont(StandardFonts.Helvetica);
+  if (arialRef) font.name = 'Arial';
+  // Update only fields that were actually changed. In particular, do not run
+  // pdf-lib's global updater for checkbox fields: its default text-field
+  // appearance redraws the widget rectangle and can alter the original page
+  // artwork underneath it.
+  for (const field of targetForm.getFields()) {
+    if (PDF_CHECKBOX_FIELDS.has(field.getName())) continue;
+    try {
+      if (field.needsAppearancesUpdate()) field.defaultUpdateAppearances(font);
+    } catch (_) {}
+  }
+
+  // Reuse the template's embedded Arial resource for the static marks. This
+  // keeps the X independent of viewer-specific symbol fonts and avoids adding
+  // another, non-embedded standard font to the exported PDF.
+  await drawStaticCheckboxMarks(targetPdf, targetForm, font);
+
+  // The font resource already exists in the template. Prevent pdf-lib from
+  // replacing it with a newly embedded Helvetica resource during save.
+  if (arialRef) font.modified = false;
+  targetForm.acroForm.dict.set(PDFName.of('NeedAppearances'), PDFBool.False);
+}
+
+function bytesToPdfString(bytes) {
+  return Array.from(bytes, byte => String.fromCharCode(byte)).join('');
+}
+
+function decodeAppearanceStream(stream) {
+  const bytes = stream.getContents();
+  const filter = stream.dict.get(PDFName.of('Filter'));
+  return filter ? bytesToPdfString(pako.inflate(bytes)) : bytesToPdfString(bytes);
+}
+
+function createFrameOnlyAppearance(targetPdf, originalStream, contents) {
+  const context = targetPdf.context;
+  return context.flateStream(contents, {
+    BBox: originalStream.dict.get(PDFName.of('BBox')),
+    Matrix: originalStream.dict.get(PDFName.of('Matrix')),
+    Resources: originalStream.dict.get(PDFName.of('Resources')),
+    Type: PDFName.of('XObject'),
+    Subtype: PDFName.of('Form'),
+  });
+}
+
+function removeCheckboxText(contents) {
+  return contents.replace(/(\r?\n)\s*(?:\([^)]*\)|<[^>]*>)\s*Tj/g, '$1() Tj');
+}
+
+async function drawStaticCheckboxMarks(targetPdf, targetForm, staticFont) {
+  const context = targetPdf.context;
+
+  for (const fieldName of STATIC_CHECKBOX_FIELDS) {
+    let field;
+    try {
+      field = targetForm.getTextField(fieldName);
+    } catch (_) {
+      continue;
+    }
+    if (!field.needsAppearancesUpdate()) continue;
+
+    const marked = field.getText() === 'x';
+    for (const widget of field.acroField.getWidgets()) {
+      const appearance = context.lookup(widget.dict.get(PDFName.of('AP')));
+      const originalRef = appearance?.get(PDFName.of('N'));
+      const originalStream = originalRef ? context.lookup(originalRef) : null;
+      if (originalStream?.getContents) {
+        const frameOnly = createFrameOnlyAppearance(targetPdf, originalStream, removeCheckboxText(decodeAppearanceStream(originalStream)));
+        widget.dict.set(PDFName.of('AP'), context.obj({ N: context.register(frameOnly) }));
+        widget.dict.delete(PDFName.of('AS'));
+      }
+
+      if (marked) {
+        const page = targetForm.findWidgetPage(widget);
+        const { x, y, width, height } = widget.getRectangle();
+        const textWidth = staticFont.widthOfTextAtSize('x', CHECKBOX_FONT_SIZE);
+        const textHeight = staticFont.heightAtSize(CHECKBOX_FONT_SIZE, { descender: false });
+        page.drawText('x', {
+          x: x + (width - textWidth) / 2,
+          y: y + (height - textHeight) / 2,
+          size: CHECKBOX_FONT_SIZE,
+          font: staticFont,
+          color: rgb(0, 0, 0),
+        });
+      }
+    }
+
+    // Keep the interactive field empty. The visible X is now permanently part
+    // of the page content, so no viewer has to interpret a checkbox state.
+    field.setText('');
+    field.markAsClean();
+  }
+}
+
+async function createFilledPdf(sourceUri) {
+  const values = parseSourceData(await extractPdfText(sourceUri));
+  return createFilledPdfFromValues(values);
 }
 
 const EEG_GROUPS = Array.from({ length: 12 }, (_, index) => `EEG Gr.${String(index + 1).padStart(2, '0')}`);
@@ -596,19 +787,29 @@ async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnable
   }
 
   for (const [fieldName, value] of Object.entries(fields)) {
-    replaceAppearanceText(targetPdf, targetForm.getTextField(fieldName), value);
+    const field = targetForm.getTextField(fieldName);
+    field.setText(value || '');
+    field.setFontSize(PDF_CHECKBOX_FIELDS.has(fieldName) ? CHECKBOX_FONT_SIZE : FORM_FONT_SIZE);
   }
 
   await addSavedTextField(targetPdf);
   await updateGatewayAnnotation(targetPdf, gatewayWerkNr, gatewayType);
 
-  targetForm.acroForm.dict.set(PDFName.of('NeedAppearances'), PDFBool.False);
-  return targetPdf.save();
+  await updateAutoSizedFormAppearances(targetPdf, targetForm);
+  return targetPdf.save({ updateFieldAppearances: false });
 }
 
 export default function App() {
+  useEffect(() => {
+    getAppDirectory(SOURCE_DIRECTORY_NAME);
+    getAppDirectory(EDIT_DIRECTORY_NAME);
+    getAppDirectory(FINISHED_DIRECTORY_NAME);
+  }, []);
+
   const [selected, setSelected] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [manualSourceOpen, setManualSourceOpen] = useState(false);
+  const [manualSourceText, setManualSourceText] = useState('');
   const [editScreen, setEditScreen] = useState(false);
   const [selectedEditPdf, setSelectedEditPdf] = useState(null);
   const [selectedEditPdfName, setSelectedEditPdfName] = useState('');
@@ -708,12 +909,44 @@ export default function App() {
   }
 
   async function choosePdf() {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: ['application/pdf', 'application/zip', 'application/x-rar-compressed', 'application/x-rar'],
-      multiple: true,
-      copyToCacheDirectory: true
+    const sourceDirectory = getAppDirectory(SOURCE_DIRECTORY_NAME);
+    const result = await File.pickFileAsync({
+      initialUri: sourceDirectory.uri,
+      mimeTypes: ['application/pdf', 'application/zip', 'application/x-rar-compressed', 'application/x-rar'],
+      multipleFiles: true
     });
-    if (!result.canceled) setSelected(result.assets);
+    if (!result.canceled) setSelected(result.result);
+  }
+
+  function openManualSource() {
+    setManualSourceText('');
+    setManualSourceOpen(true);
+  }
+
+  async function fillManualSource() {
+    let values;
+    try {
+      values = parseManualSourceData(manualSourceText);
+    } catch (error) {
+      Alert.alert('Eingabe prüfen', error.message);
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const outputDirectory = getAppDirectory(EDIT_DIRECTORY_NAME);
+      const generated = await createFilledPdfFromValues(values);
+      const outputFile = new File(outputDirectory, generated.filename);
+      if (await confirmFileReplacement(outputFile)) {
+        saveFileBytes(outputFile, generated.bytes);
+        setManualSourceOpen(false);
+        Alert.alert('Fertig', `Die bearbeitete Datei wurde in „${EDIT_DIRECTORY_NAME}“ gespeichert.`);
+      }
+    } catch (error) {
+      Alert.alert('Fehler', error.message || 'Die manuelle Quelle konnte nicht verarbeitet werden.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function fillPdf() {
@@ -732,8 +965,7 @@ export default function App() {
       ));
       if (!mode) return;
 
-      const outputDirectory = new Directory(Paths.document, 'MyPDF-Ausgabe');
-      outputDirectory.create({ idempotent: true, intermediates: true });
+      const outputDirectory = getAppDirectory(EDIT_DIRECTORY_NAME);
       const sources = [];
       for (const asset of selected) sources.push(...await expandSource(asset));
       const generated = [];
@@ -743,14 +975,14 @@ export default function App() {
         const files = Object.fromEntries(generated.map(file => [file.filename, file.bytes]));
         const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
         const zipFile = new File(outputDirectory, `Zaehlerwechselbelege_${stamp}.zip`);
-        zipFile.write(zipSync(files));
+        if (await confirmFileReplacement(zipFile)) saveFileBytes(zipFile, zipSync(files));
       } else {
         for (const file of generated) {
           const outputFile = new File(outputDirectory, file.filename);
-          outputFile.write(file.bytes);
+          if (await confirmFileReplacement(outputFile)) saveFileBytes(outputFile, file.bytes);
         }
       }
-      Alert.alert('Fertig', `${generated.length} PDF${generated.length === 1 ? '' : 's'} wurden in „MyPDF-Ausgabe“ gespeichert.`);
+      Alert.alert('Fertig', `Die bearbeiteten Dateien wurden in „${EDIT_DIRECTORY_NAME}“ gespeichert.`);
     } catch (error) {
       Alert.alert('Fehler', error.message || 'Die PDF konnte nicht verarbeitet werden.');
     } finally { setBusy(false); }
@@ -768,8 +1000,7 @@ export default function App() {
     if (!selectedEditPdf || !hasSelection || !selectedDate || !bildnummer.trim() || (rseEnabled && (!selectedGroup || !werkNr.trim()))) return;
     setEditBusy(true);
     try {
-      const outputDirectory = new Directory(Paths.document, 'MyPDF-Ausgabe');
-      outputDirectory.create({ idempotent: true, intermediates: true });
+      const outputDirectory = getAppDirectory(FINISHED_DIRECTORY_NAME);
       const originalSourceName = selectedEditPdf.name || 'Zaehlerwechselbeleg.pdf';
       const sourceName = ensurePdfFilename(selectedEditPdfName, originalSourceName);
       const sourceBaseName = sourceName.replace(/\.pdf$/i, '');
@@ -786,15 +1017,10 @@ export default function App() {
             ? `${cleanFilenamePart(sourceBaseName)}.pdf`
             : `${cleanFilenamePart(sourceBaseName)}_bearbeitet.pdf`;
       const outputFile = new File(outputDirectory, outputFilename);
-      outputFile.write(await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, effectiveEinbau, effectiveAusbau, zlgEnabled, wsdsEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, allgemeinEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues, bemerkungen, bildnummer));
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(outputFile.uri, {
-          dialogTitle: 'Bearbeitete PDF Vorschau',
-          mimeType: 'application/pdf',
-          UTI: 'com.adobe.pdf'
-        });
-      } else {
-        Alert.alert('Gespeichert', 'Die bearbeitete PDF wurde in „MyPDF-Ausgabe“ gespeichert.');
+      const pdfBytes = await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, effectiveEinbau, effectiveAusbau, zlgEnabled, wsdsEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, allgemeinEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues, bemerkungen, bildnummer);
+      if (await confirmFileReplacement(outputFile)) {
+        saveFileBytes(outputFile, pdfBytes);
+        Alert.alert('Gespeichert', `Die bearbeitete PDF wurde in „${FINISHED_DIRECTORY_NAME}“ gespeichert.`);
       }
     } catch (error) {
       Alert.alert('Fehler', error.message || 'Die PDF konnte nicht bearbeitet werden.');
@@ -804,13 +1030,13 @@ export default function App() {
   }
 
   async function chooseEditPdf() {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: 'application/pdf',
-      multiple: false,
-      copyToCacheDirectory: true
+    const editDirectory = getAppDirectory(EDIT_DIRECTORY_NAME);
+    const result = await File.pickFileAsync({
+      initialUri: editDirectory.uri,
+      mimeTypes: 'application/pdf'
     });
     if (!result.canceled) {
-      const selectedAsset = result.assets[0];
+      const selectedAsset = result.result;
       try {
         if (REMARK_PRESETS_FILE.exists) {
           const savedPresets = JSON.parse(await REMARK_PRESETS_FILE.text());
@@ -1179,36 +1405,113 @@ export default function App() {
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.container}>
-        <Text style={styles.title}>MyPDFTool</Text>
-        <Text style={styles.subtitle}>Zählerwechselbeleg ausfüllen</Text>
-        <Text style={styles.help}>Wähle einzelne PDFs oder ZIP-/RAR-Dateien aus. Jede enthaltene PDF wird separat gelesen und ausgefüllt.</Text>
-        <Pressable style={styles.button} onPress={choosePdf}><Text style={styles.buttonText}>Quellen auswählen</Text></Pressable>
-        {selected.length > 0 && <Text style={styles.file}>{selected.length} Quelle{selected.length === 1 ? '' : 'n'} ausgewählt</Text>}
-        <Pressable style={[styles.button, styles.primary, (!selected.length || busy) && styles.disabled]} disabled={!selected.length || busy} onPress={fillPdf}>
-          {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>PDFs ausfüllen und speichern</Text>}
-        </Pressable>
-        <Pressable style={[styles.button, styles.secondary]} onPress={chooseEditPdf}>
-          <Text style={styles.buttonText}>PDF bearbeiten</Text>
-        </Pressable>
-        <Text style={styles.note}>Die fertigen Dateien werden direkt im iPhone-Dateien-Ordner „MyPDF-Ausgabe“ gespeichert.</Text>
+    <SafeAreaView style={[styles.safe, styles.homeSafe]}>
+      <View style={[styles.container, styles.homeContainer]}>
+        <View style={styles.homeBrand}>
+          <View style={styles.logoHalo}>
+            <View style={styles.logoGlow} />
+            <Image source={require('./assets/icon.png')} style={styles.homeLogo} resizeMode="contain" />
+          </View>
+          <Text style={styles.homeTitle}>MyPDFTool</Text>
+          <Text style={styles.subtitle}>Zählerwechselbeleg ausfüllen</Text>
+        </View>
+
+        <View style={styles.homeActions}>
+          <Pressable style={[styles.homeButton, styles.homeButtonPrimary]} onPress={choosePdf}>
+            <View style={styles.homeButtonIcon}><Text style={styles.homeButtonIconText}>＋</Text></View>
+            <View style={styles.homeButtonCopy}><Text style={styles.homeButtonTitle}>Quellen auswählen</Text></View>
+            <Text style={styles.homeButtonArrow}>›</Text>
+          </Pressable>
+          <Pressable style={styles.homeButton} onPress={openManualSource}>
+            <View style={[styles.homeButtonIcon, styles.homeButtonIconMuted]}><Text style={styles.homeButtonIconText}>✎</Text></View>
+            <View style={styles.homeButtonCopy}><Text style={styles.homeButtonTitle}>Quelle manuell</Text></View>
+            <Text style={styles.homeButtonArrow}>›</Text>
+          </Pressable>
+          {selected.length > 0 && <View style={styles.selectionPill}><View style={styles.selectionDot} /><Text style={styles.selectionText}>{selected.length} Quelle{selected.length === 1 ? '' : 'n'} ausgewählt</Text></View>}
+          <Pressable style={[styles.homeButton, styles.homeButtonAccent, (!selected.length || busy) && styles.disabled]} disabled={!selected.length || busy} onPress={fillPdf}>
+            <View style={[styles.homeButtonIcon, styles.homeButtonIconAccent]}>{busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.homeButtonIconText}>✓</Text>}</View>
+            <View style={styles.homeButtonCopy}><Text style={styles.homeButtonTitle}>PDFs ausfüllen</Text></View>
+            <Text style={styles.homeButtonArrow}>›</Text>
+          </Pressable>
+          <Pressable style={styles.homeButton} onPress={chooseEditPdf}>
+            <View style={[styles.homeButtonIcon, styles.homeButtonIconMuted]}><Text style={styles.homeButtonIconText}>✦</Text></View>
+            <View style={styles.homeButtonCopy}><Text style={styles.homeButtonTitle}>PDF bearbeiten</Text></View>
+            <Text style={styles.homeButtonArrow}>›</Text>
+          </Pressable>
+        </View>
+
         <Text style={styles.version}>Update Version 1.3</Text>
       </View>
+      <Modal visible={manualSourceOpen} animationType="slide" transparent onRequestClose={() => setManualSourceOpen(false)}>
+        <KeyboardAvoidingView style={styles.manualModalBackdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={styles.manualModalCard}>
+            <Text style={styles.manualModalTitle}>Quelle Manuell</Text>
+            <Text style={styles.manualModalHint}>3 Zeilen: Name, Straße/Hausnummer, PLZ/Gemeinde/Ortsteil. Bei 4 Zeilen ist die zweite Zeile die Firma.</Text>
+            <TextInput
+              value={manualSourceText}
+              onChangeText={setManualSourceText}
+              placeholder="Name\nStraße und Hausnummer\nPLZ Gemeinde Ortsteil"
+              placeholderTextColor="#8a96aa"
+              multiline
+              autoFocus
+              scrollEnabled={false}
+              textAlignVertical="top"
+              style={[styles.manualSourceInput, { height: Math.min(280, Math.max(58, manualSourceText.split(/\r?\n/).length * 34 + 24)) }]}
+            />
+            <View style={styles.manualModalActions}>
+              <Pressable style={[styles.button, styles.manualCancelButton]} onPress={() => setManualSourceOpen(false)} disabled={busy}>
+                <Text style={styles.buttonText}>Abbrechen</Text>
+              </Pressable>
+              <Pressable style={[styles.button, styles.primary, styles.manualSaveButton, busy && styles.disabled]} onPress={fillManualSource} disabled={busy}>
+                {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Speichern</Text>}
+              </Pressable>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#f5f7fb' },
+  homeSafe: { backgroundColor: '#07152e' },
   keyboardAvoiding: { flex: 1 },
   container: { flex: 1, padding: 24, justifyContent: 'center' },
+  homeContainer: { paddingTop: 34, paddingBottom: 18, backgroundColor: '#07152e' },
+  homeBrand: { alignItems: 'center' },
+  logoHalo: { width: 156, height: 156, borderRadius: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: '#102b57', borderWidth: 1, borderColor: 'rgba(126,211,255,0.45)', shadowColor: '#36b7ff', shadowOpacity: 0.32, shadowRadius: 24, shadowOffset: { width: 0, height: 8 }, elevation: 8 },
+  logoGlow: { position: 'absolute', width: 116, height: 116, borderRadius: 58, backgroundColor: 'rgba(39,170,255,0.22)' },
+  homeLogo: { width: 142, height: 142, borderRadius: 38 },
+  homeTitle: { marginTop: 18, color: '#fff', fontSize: 38, fontWeight: '800', letterSpacing: -1.1 },
+  homeActions: { width: '100%', gap: 12, marginTop: 28 },
+  homeButton: { minHeight: 68, paddingHorizontal: 16, borderRadius: 20, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.09)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)' },
+  homeButtonPrimary: { backgroundColor: '#1b73d1', borderColor: '#55c8ff', shadowColor: '#229cff', shadowOpacity: 0.3, shadowRadius: 14, shadowOffset: { width: 0, height: 5 }, elevation: 5 },
+  homeButtonAccent: { backgroundColor: '#16a779', borderColor: '#5ae4b6' },
+  homeButtonIcon: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.16)' },
+  homeButtonIconMuted: { backgroundColor: 'rgba(120,183,255,0.18)' },
+  homeButtonIconAccent: { backgroundColor: 'rgba(255,255,255,0.2)' },
+  homeButtonIconText: { color: '#fff', fontSize: 24, lineHeight: 26, fontWeight: '700' },
+  homeButtonCopy: { flex: 1, marginLeft: 14 },
+  homeButtonTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
+  homeButtonArrow: { color: 'rgba(255,255,255,0.8)', fontSize: 30, fontWeight: '300', marginLeft: 10 },
+  selectionPill: { alignSelf: 'center', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.1)' },
+  selectionDot: { width: 7, height: 7, borderRadius: 4, marginRight: 8, backgroundColor: '#6ee7b7' },
+  selectionText: { color: '#c8d8f4', fontSize: 13, fontWeight: '600' },
   title: { fontSize: 34, fontWeight: '700', color: '#172033' },
   subtitle: { fontSize: 19, marginTop: 6, color: '#3d4c68' },
   help: { fontSize: 16, lineHeight: 24, marginTop: 28, color: '#53627b' },
   button: { minHeight: 54, borderRadius: 12, backgroundColor: '#dce4f2', alignItems: 'center', justifyContent: 'center', marginTop: 24 },
   primary: { backgroundColor: '#2457d6', marginTop: 12 },
   disabled: { opacity: 0.45 },
+  manualModalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
+  manualModalCard: { padding: 24, borderTopLeftRadius: 22, borderTopRightRadius: 22, backgroundColor: '#f5f7fb' },
+  manualModalTitle: { color: '#172033', fontSize: 24, fontWeight: '700' },
+  manualModalHint: { marginTop: 8, color: '#53627b', fontSize: 14, lineHeight: 20 },
+  manualSourceInput: { marginTop: 18, minHeight: 58, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: '#172033', fontSize: 16, lineHeight: 24, backgroundColor: '#fff' },
+  manualModalActions: { flexDirection: 'row', gap: 8, marginTop: 14 },
+  manualCancelButton: { flex: 1, marginTop: 0 },
+  manualSaveButton: { flex: 1, marginTop: 0 },
   buttonText: { color: '#172033', fontSize: 17, fontWeight: '600' },
   primaryButtonText: { color: '#fff', fontSize: 17, fontWeight: '600' },
   secondary: { backgroundColor: '#eef2f8', marginTop: 12, borderWidth: 1, borderColor: '#cbd5e5' },
