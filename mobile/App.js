@@ -2,6 +2,7 @@
 import { useEffect } from 'react';
 import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as DocumentPicker from 'expo-document-picker';
 import { Directory, File, Paths } from 'expo-file-system';
 import { Asset } from 'expo-asset';
 import {
@@ -62,6 +63,7 @@ function confirmFileReplacement(file) {
 }
 
 function saveFileBytes(file, bytes) {
+  file.parentDirectory.create({ idempotent: true, intermediates: true });
   file.create({ overwrite: true, intermediates: true });
   file.write(bytes);
 }
@@ -121,15 +123,29 @@ function normalizeLocation(value) {
     .replace(/ß/g, 'ss').replace(/[^a-z0-9]/g, '');
 }
 
+function escapeRegExp(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function resolvePostalLocation(postal, rawLocation) {
   const area = POSTAL_AREAS[postal];
   if (!area) return { gemeinde: rawLocation, ortsteil: '' };
-  const normalized = normalizeLocation(rawLocation);
+  const raw = String(rawLocation || '').trim();
+  const normalized = normalizeLocation(raw);
   const municipality = normalizeLocation(area.gemeinde);
-  const ortsteil = area.ortsteile.find(value => normalized.includes(normalizeLocation(value)));
+  const ortsteil = area.ortsteile
+    .filter(value => normalizeLocation(value) !== municipality && normalized.includes(normalizeLocation(value)))
+    .sort((left, right) => normalizeLocation(right).length - normalizeLocation(left).length)[0] || '';
+  if (ortsteil) return { gemeinde: area.gemeinde, ortsteil };
+
+  // Manual sources use the format "PLZ Gemeinde Ortsteil". If the district
+  // is not in the lookup list, preserve the text after the municipality so it
+  // can still be used in the PDF and in the generated filename.
+  const remainderMatch = raw.match(new RegExp(`^${escapeRegExp(area.gemeinde)}(?:\\s+|\\s*[,;/|-]\\s*)(.+)$`, 'iu'));
+  const remainder = remainderMatch?.[1]?.trim() || '';
   return {
     gemeinde: area.gemeinde,
-    ortsteil: ortsteil && normalizeLocation(ortsteil) !== municipality ? ortsteil : ''
+    ortsteil: remainder && normalizeLocation(remainder) !== municipality ? remainder : ''
   };
 }
 
@@ -1009,8 +1025,9 @@ export default function App() {
       const hasCustomFilename = Boolean(customFilenameBase && customFilenameBase !== originalBaseName);
       const rseOnly = rseEnabled && !effectiveEinbau && !effectiveAusbau && !zlgEnabled;
       const remarkFilenameSuffix = getRemarkFilenameSuffix(bemerkungen);
+      const filenameBaseWithoutTrailingComma = cleanFilenamePart(sourceBaseName).replace(/,\s*$/, '').trim();
       const outputFilename = remarkFilenameSuffix
-        ? `${cleanFilenamePart(sourceBaseName)}, ${remarkFilenameSuffix}.pdf`
+        ? `${filenameBaseWithoutTrailingComma}, ${remarkFilenameSuffix}.pdf`
         : rseOnly
           ? `${cleanFilenamePart(sourceBaseName)}, iMSys RSE nachgerüstet.pdf`
           : hasCustomFilename
@@ -1030,13 +1047,13 @@ export default function App() {
   }
 
   async function chooseEditPdf() {
-    const editDirectory = getAppDirectory(EDIT_DIRECTORY_NAME);
-    const result = await File.pickFileAsync({
-      initialUri: editDirectory.uri,
-      mimeTypes: 'application/pdf'
+    const result = await DocumentPicker.getDocumentAsync({
+      type: 'application/pdf',
+      multiple: false,
+      copyToCacheDirectory: true
     });
     if (!result.canceled) {
-      const selectedAsset = result.result;
+      const selectedAsset = result.assets[0];
       try {
         if (REMARK_PRESETS_FILE.exists) {
           const savedPresets = JSON.parse(await REMARK_PRESETS_FILE.text());
@@ -1398,6 +1415,9 @@ export default function App() {
           <Pressable style={[styles.button, styles.primary, (() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wsdsEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || allgemeinEnabled || klemmeEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || !bildnummer.trim() || (rseEnabled && !werkNr.trim()) || (gatewayWerkNr.trim() && !einbauWerkNr.trim()) || editBusy; })() && styles.disabled]} disabled={(() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wsdsEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || allgemeinEnabled || klemmeEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || !bildnummer.trim() || (rseEnabled && !werkNr.trim()) || (gatewayWerkNr.trim() && !einbauWerkNr.trim()) || editBusy; })()} onPress={fillRsePdf}>
             {editBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>PDF erstellen und speichern</Text>}
           </Pressable>
+          <Pressable style={[styles.button, styles.bottomBackButton]} onPress={() => setEditScreen(false)}>
+            <Text style={styles.buttonText}>Zurück</Text>
+          </Pressable>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -1537,6 +1557,7 @@ const styles = StyleSheet.create({
   version: { position: 'absolute', right: 12, bottom: 8, color: '#9aa5b8', fontSize: 11 },
   editContainer: { padding: 24, paddingBottom: 300 },
   backButton: { alignSelf: 'flex-start', paddingVertical: 8, paddingRight: 18 },
+  bottomBackButton: { marginTop: 16, marginBottom: 24, backgroundColor: '#eef2f8', borderWidth: 1, borderColor: '#cbd5e5' },
   backText: { color: '#2457d6', fontSize: 17, fontWeight: '600' },
   card: { marginTop: 26, padding: 20, borderRadius: 16, backgroundColor: '#fff', shadowColor: '#172033', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
   subsectionCard: { marginTop: 16, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1 },
