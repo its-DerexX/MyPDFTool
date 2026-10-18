@@ -559,8 +559,11 @@ async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnable
   }
   if (ausbauWerkNr.trim()) {
     for (const standField of SZA_STAND_FIELDS[szaType] || []) {
-      fields[standField.marker] = String(szaStandValues?.[standField.field] || '').trim();
-      fields[standField.field] = standField.label;
+      const standValue = String(szaStandValues?.[standField.field] || '').trim();
+      if (standValue !== ',') {
+        fields[standField.marker] = standValue;
+        fields[standField.field] = standField.label;
+      }
     }
   }
   for (let index = 6; index <= 9; index++) {
@@ -571,8 +574,11 @@ async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnable
   fields.htzst0 = '';
   if (einbauEnabled && einbauWerkNr.trim()) {
     for (const standField of SZE_STAND_FIELDS[szeType] || []) {
-      fields[standField.marker] = String(szeStandValues?.[standField.field] || '').trim();
-      fields[standField.field] = standField.label;
+      const standValue = String(szeStandValues?.[standField.field] || '').trim();
+      if (standValue !== ',') {
+        fields[standField.marker] = standValue;
+        fields[standField.field] = standField.label;
+      }
     }
   }
   if (group && werkNr.trim()) {
@@ -754,6 +760,11 @@ export default function App() {
     const effectiveEinbau = einbauEnabled || szwEnabled;
     const effectiveAusbau = ausbauEnabled || szwEnabled;
     const hasSelection = rseEnabled || effectiveEinbau || effectiveAusbau || zlgEnabled || wsdsEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || allgemeinEnabled || klemmeEnabled;
+    const gatewayRequiresEinbau = gatewayWerkNr.trim() && !einbauWerkNr.trim();
+    if (gatewayRequiresEinbau) {
+      Alert.alert('Werk Nr. Einbau erforderlich', 'Wenn eine Gateway-Werknummer eingetragen ist, muss auch eine Werknummer für den Einbau eingetragen werden.');
+      return;
+    }
     if (!selectedEditPdf || !hasSelection || !selectedDate || !bildnummer.trim() || (rseEnabled && (!selectedGroup || !werkNr.trim()))) return;
     setEditBusy(true);
     try {
@@ -1011,12 +1022,12 @@ export default function App() {
                     {standField.label ? <Text style={styles.szaStandLabel}>{standField.label}</Text> : null}
                     <TextInput
                       value={szaStandValues[standField.field] || ''}
-                      onChangeText={value => setSzaStandValues(current => ({ ...current, [standField.field]: szaType === 'ALT' ? value.replace(/[^0-9,]/g, '') : value.replace(/[^0-9]/g, '') }))}
+                      onChangeText={value => setSzaStandValues(current => ({ ...current, [standField.field]: value.replace(/[^0-9,]/g, '') }))}
                       placeholder={standField.label ? 'Stand eingeben' : 'Stand eingeben'}
                       placeholderTextColor="#8a96aa"
                       style={styles.szaStandInput}
-                      keyboardType={szaType === 'ALT' ? 'decimal-pad' : 'numeric'}
-                      inputMode={szaType === 'ALT' ? 'decimal' : 'numeric'}
+                      keyboardType="decimal-pad"
+                      inputMode="decimal"
                     />
                   </View>)}
                 </View>
@@ -1042,12 +1053,12 @@ export default function App() {
                     <Text style={styles.szaStandLabel}>{standField.label}</Text>
                     <TextInput
                       value={szeStandValues[standField.field] || ''}
-                      onChangeText={value => setSzeStandValues(current => ({ ...current, [standField.field]: value.replace(/[^0-9]/g, '') }))}
+                      onChangeText={value => setSzeStandValues(current => ({ ...current, [standField.field]: value.replace(/[^0-9,]/g, '') }))}
                       placeholder="Stand eingeben"
                       placeholderTextColor="#8a96aa"
                       style={styles.szaStandInput}
-                      keyboardType="numeric"
-                      inputMode="numeric"
+                      keyboardType="decimal-pad"
+                      inputMode="decimal"
                     />
                   </View>)}
                 </View>
@@ -1061,6 +1072,7 @@ export default function App() {
                 <TextInput value={gatewayWerkNr} onChangeText={setGatewayWerkNr} placeholder="Werknummer eingeben oder QR scannen" placeholderTextColor="#8a96aa" style={[styles.input, styles.scannerInput]} autoCapitalize="characters" />
                 <Pressable style={styles.scanButton} onPress={() => openScanner('gateway')}><Text style={styles.scanButtonText}>Scannen</Text></Pressable>
               </View>
+              {gatewayWerkNr.trim() && !einbauWerkNr.trim() && <Text style={styles.gatewayRequiredHint}>Für eine Gateway-Werknummer ist auch eine Werk Nr. Einbau erforderlich.</Text>}
               {gatewayWerkNr.trim() && <>
                 <Text style={styles.label}>Übertragung Gateway</Text>
                 <View style={styles.gatewayTypeRow}>
@@ -1117,6 +1129,7 @@ export default function App() {
               keyboardType="decimal-pad"
               inputMode="decimal"
             />
+            {!bildnummer.trim() && <Text style={styles.requiredFieldHint}>Bitte Bildnummer eingeben.</Text>}
           </View>
 
           <View style={styles.card}>
@@ -1156,7 +1169,7 @@ export default function App() {
             </View>}
           </View>
 
-          <Pressable style={[styles.button, styles.primary, (() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wsdsEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || allgemeinEnabled || klemmeEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || !bildnummer.trim() || (rseEnabled && !werkNr.trim()) || editBusy; })() && styles.disabled]} disabled={(() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wsdsEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || allgemeinEnabled || klemmeEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || !bildnummer.trim() || (rseEnabled && !werkNr.trim()) || editBusy; })()} onPress={fillRsePdf}>
+          <Pressable style={[styles.button, styles.primary, (() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wsdsEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || allgemeinEnabled || klemmeEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || !bildnummer.trim() || (rseEnabled && !werkNr.trim()) || (gatewayWerkNr.trim() && !einbauWerkNr.trim()) || editBusy; })() && styles.disabled]} disabled={(() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wsdsEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || allgemeinEnabled || klemmeEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || !bildnummer.trim() || (rseEnabled && !werkNr.trim()) || (gatewayWerkNr.trim() && !einbauWerkNr.trim()) || editBusy; })()} onPress={fillRsePdf}>
             {editBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>PDF erstellen und speichern</Text>}
           </Pressable>
           </ScrollView>
@@ -1260,6 +1273,8 @@ const styles = StyleSheet.create({
   gatewayTypeButtonSelected: { borderColor: '#2457d6', backgroundColor: '#2457d6' },
   gatewayTypeText: { color: '#172033', fontSize: 15, fontWeight: '700' },
   gatewayTypeTextSelected: { color: '#fff' },
+  gatewayRequiredHint: { marginTop: 8, color: '#b45309', fontSize: 13, lineHeight: 18 },
+  requiredFieldHint: { marginTop: 8, color: '#dc2626', fontSize: 13, fontWeight: '600' },
   szaTypeRow: { flexDirection: 'row', gap: 6 },
   szaStandGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 },
   szaStandItem: { flex: 1, minWidth: 120 },
