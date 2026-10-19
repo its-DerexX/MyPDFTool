@@ -163,6 +163,16 @@ function ensurePdfFilename(value, fallback) {
   return `${cleaned || fallbackBase}.pdf`;
 }
 
+function hasCustomFilename(value, originalName) {
+  const currentBaseName = removePdfExtension(value);
+  const originalBaseName = removePdfExtension(originalName) || 'Zaehlerwechselbeleg';
+  return Boolean(currentBaseName && currentBaseName !== originalBaseName);
+}
+
+function hasNumericStandValue(value) {
+  return /^\d+$/.test(String(value || '').trim());
+}
+
 function splitRemarkFields(value) {
   const words = String(value || '').trim().split(/\s+/).filter(Boolean);
   const lines = ['', ''];
@@ -175,8 +185,8 @@ function splitRemarkFields(value) {
 
 function getRemarkFilenameSuffix(value) {
   const normalizedRemark = String(value || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase('de-DE');
-  const filenameSuffixes = ['iMSys Kaskade Z1', 'iMSys Kaskade Z2', 'Kaskade Z1', 'Kaskade Z2', 'Meterpay'];
-  return filenameSuffixes.find(suffix => normalizedRemark.includes(suffix.toLocaleLowerCase('de-DE'))) || '';
+  const filenameSuffixes = [RSE_REMARK_PRESET, 'iMSys Kaskade Z1', 'iMSys Kaskade Z2', 'Kaskade Z1', 'Kaskade Z2', 'Meterpay'];
+  return filenameSuffixes.find(suffix => normalizedRemark === suffix.toLocaleLowerCase('de-DE')) || '';
 }
 
 function getSourceFilenamePlace(values) {
@@ -497,12 +507,16 @@ const SZA_STAND_FIELDS = {
   ],
   ALT: [{ field: 'htzst1', marker: 'zst1', label: '' }]
 };
-const SZE_TYPES = ['DS', 'ZRZ'];
+const SZE_TYPES = ['ZRZ', 'DT'];
 const SZE_STAND_FIELDS = {
-  DS: [{ field: 'htzst6', marker: 'zst6', label: '1.8.0' }],
   ZRZ: [
     { field: 'htzst6', marker: 'zst6', label: '1.8.0' },
     { field: 'htzst7', marker: 'zst7', label: '2.8.0' }
+  ],
+  DT: [
+    { field: 'htzst6', marker: 'zst6', label: '1.8.1' },
+    { field: 'htzst7', marker: 'zst7', label: '1.8.2' },
+    { field: 'htzst8', marker: 'zst8', label: '2.8.0' }
   ]
 };
 const EEG_LOCATION_GROUPS = [
@@ -579,7 +593,7 @@ function MiniCalendar({ value, onChange }) {
       <View style={styles.calendarHeader}>
         <Pressable style={styles.calendarArrow} onPress={() => moveMonth(-1)}><Text style={styles.calendarArrowText}>‹</Text></Pressable>
         <Pressable style={styles.monthTitleButton} onPress={() => setMonthMenuOpen(open => !open)}>
-          <Text style={styles.monthTitle}>{MONTH_NAMES[month]} {year}⌄</Text>
+          <Text style={styles.monthTitle} numberOfLines={1}>{MONTH_NAMES[month]} {year}⌄</Text>
         </Pressable>
         <Pressable style={styles.calendarArrow} onPress={() => moveMonth(1)}><Text style={styles.calendarArrowText}>›</Text></Pressable>
       </View>
@@ -589,10 +603,24 @@ function MiniCalendar({ value, onChange }) {
         </Pressable>)}
       </View>}
       <View style={styles.weekdayRow}>{WEEKDAY_NAMES.map(day => <Text key={day} style={styles.weekday}>{day}</Text>)}</View>
-      <View style={styles.calendarGrid}>{cells.map((day, index) => <Pressable key={`${index}-${day ? day.getDate() : 'empty'}`} disabled={!day} style={[styles.dayCell, day && dateKey(day) === dateKey(value) && styles.dayCellSelected]} onPress={() => day && onChange(day)}>
-        <Text style={[styles.dayText, day && dateKey(day) === dateKey(value) && styles.dayTextSelected]}>{day ? day.getDate() : ''}</Text>
-      </Pressable>)}</View>
+      <View style={styles.calendarGrid}>{cells.map((day, index) => {
+        const isSelected = Boolean(day && dateKey(day) === dateKey(value));
+        const isToday = Boolean(day && dateKey(day) === dateKey(today));
+        return <Pressable key={`${index}-${day ? day.getDate() : 'empty'}`} disabled={!day} style={[styles.dayCell, isToday && styles.dayCellToday, isSelected && styles.dayCellSelected]} onPress={() => day && onChange(day)}>
+          <Text style={[styles.dayText, isToday && styles.dayTextToday, isSelected && styles.dayTextSelected]}>{day ? day.getDate() : ''}</Text>
+        </Pressable>;
+      })}</View>
     </View>
+  );
+}
+
+function GrundCheckbox({ label, checked, onPress }) {
+  const compactLabel = label.length >= 13;
+  return (
+    <Pressable style={styles.checkboxGridItem} onPress={onPress}>
+      <View style={[styles.checkbox, checked && styles.checkboxChecked]}>{checked && <Text style={styles.checkmark}>✓</Text>}</View>
+      <Text style={[styles.checkboxLabel, compactLabel && styles.checkboxLabelLong]} numberOfLines={1} allowFontScaling={false}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -738,9 +766,42 @@ async function updateGatewayAnnotation(targetPdf, gatewayWerkNr, gatewayType) {
   page.drawText(text, { x: 83.25, y: 421.17, size: 15, font, color: rgb(0, 0, 0) });
 }
 
-async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnabled, ausbauEnabled, zusammenlegungEnabled, wsdsEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, allgemeinEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues, bemerkungen, bildnummer) {
+function drawRseEinbauStrike(targetPdf) {
+  const page = targetPdf.getPages()[0];
+  // The lower meter block's left label cell contains the static “Einbau”
+  // label. It is rotated vertically in the template, so cover it with six
+  // tightly spaced parallel red pen strokes instead of crossing the cell.
+  const centerX = 64.2;
+  // The strokes are exactly edge-to-edge: their center spacing equals their
+  // thickness, leaving no visible gap between neighboring lines.
+  for (const offset of [-4.2, -2.1, 0, 2.1, 4.2, 6.3]) {
+    page.drawLine({
+      start: { x: centerX + offset, y: 431.5 },
+      end: { x: centerX + offset, y: 480.2 },
+      color: rgb(0.9, 0.08, 0.08),
+      thickness: 2.1
+    });
+  }
+}
+
+async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnabled, ausbauEnabled, zusammenlegungEnabled, stilllegungEnabled, turnusEnabled, befundpruefungEnabled, wsdsEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, allgemeinEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues, bemerkungen, bildnummer) {
   const targetPdf = await PDFDocument.load(await readPdf(sourceUri));
   const targetForm = targetPdf.getForm();
+  const onlyRseSelected = Boolean(group)
+    && !einbauEnabled
+    && !ausbauEnabled
+    && !zusammenlegungEnabled
+    && !stilllegungEnabled
+    && !turnusEnabled
+    && !befundpruefungEnabled
+    && !wsdsEnabled
+    && !wpEnabled
+    && !pvEnabled
+    && !haushaltEnabled
+    && !gewerbeEnabled
+    && !baustromEnabled
+    && !allgemeinEnabled
+    && !klemmeEnabled;
   const [bemerkungen1, bemerkungen2] = splitRemarkFields(bemerkungen);
   const fields = {
     '1': haushaltEnabled ? 'x' : '',
@@ -753,6 +814,9 @@ async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnable
     F: einbauEnabled ? 'x' : '',
     G: ausbauEnabled ? 'x' : '',
     M: zusammenlegungEnabled ? 'x' : '',
+    L: stilllegungEnabled ? 'x' : '',
+    H: turnusEnabled ? 'x' : '',
+    I: befundpruefungEnabled ? 'x' : '',
     J: wsdsEnabled ? 'x' : '',
     'Werk Nr_2': einbauWerkNr.trim(),
     'Werk Nr': ausbauWerkNr.trim(),
@@ -779,7 +843,7 @@ async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnable
   }
   fields.zst0 = '';
   fields.htzst0 = '';
-  if (einbauEnabled && einbauWerkNr.trim()) {
+  if (einbauWerkNr.trim() && !onlyRseSelected) {
     for (const standField of SZE_STAND_FIELDS[szeType] || []) {
       const standValue = String(szeStandValues?.[standField.field] || '').trim();
       if (standValue !== ',') {
@@ -812,6 +876,7 @@ async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnable
   await updateGatewayAnnotation(targetPdf, gatewayWerkNr, gatewayType);
 
   await updateAutoSizedFormAppearances(targetPdf, targetForm);
+  if (group) drawRseEinbauStrike(targetPdf);
   return targetPdf.save({ updateFieldAppearances: false });
 }
 
@@ -838,15 +903,19 @@ export default function App() {
   const [ausbauWerkNr, setAusbauWerkNr] = useState('');
   const [gatewayWerkNr, setGatewayWerkNr] = useState('');
   const [gatewayType, setGatewayType] = useState('Draht');
-  const [szaType, setSzaType] = useState('DS');
+  const [szaType, setSzaType] = useState(null);
   const [szaStandValues, setSzaStandValues] = useState({});
   const [szeType, setSzeType] = useState('ZRZ');
+  const [szeTypeSelected, setSzeTypeSelected] = useState(false);
   const [szeStandValues, setSzeStandValues] = useState({ htzst6: '0', htzst7: '0' });
   const [editBusy, setEditBusy] = useState(false);
   const [einbauEnabled, setEinbauEnabled] = useState(false);
   const [ausbauEnabled, setAusbauEnabled] = useState(false);
   const [szwEnabled, setSzwEnabled] = useState(false);
   const [zlgEnabled, setZlgEnabled] = useState(false);
+  const [stilllegungEnabled, setStilllegungEnabled] = useState(false);
+  const [turnusEnabled, setTurnusEnabled] = useState(false);
+  const [befundpruefungEnabled, setBefundpruefungEnabled] = useState(false);
   const [wsdsEnabled, setWsdsEnabled] = useState(false);
   const [wpEnabled, setWpEnabled] = useState(false);
   const [pvEnabled, setPvEnabled] = useState(false);
@@ -922,6 +991,25 @@ export default function App() {
   function closeScanner() {
     scannerLockRef.current = true;
     setScannerTarget(null);
+  }
+
+  function isOnlyRseSelected() {
+    return rseEnabled
+      && !einbauEnabled
+      && !ausbauEnabled
+      && !szwEnabled
+      && !zlgEnabled
+      && !stilllegungEnabled
+      && !turnusEnabled
+      && !befundpruefungEnabled
+      && !wsdsEnabled
+      && !wpEnabled
+      && !pvEnabled
+      && !haushaltEnabled
+      && !gewerbeEnabled
+      && !baustromEnabled
+      && !allgemeinEnabled
+      && !klemmeEnabled;
   }
 
   async function choosePdf() {
@@ -1007,34 +1095,55 @@ export default function App() {
   async function fillRsePdf() {
     const effectiveEinbau = einbauEnabled || szwEnabled;
     const effectiveAusbau = ausbauEnabled || szwEnabled;
-    const hasSelection = rseEnabled || effectiveEinbau || effectiveAusbau || zlgEnabled || wsdsEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || allgemeinEnabled || klemmeEnabled;
+    const onlyRseSelected = isOnlyRseSelected();
+    const hasSelection = rseEnabled || effectiveEinbau || effectiveAusbau || zlgEnabled || stilllegungEnabled || turnusEnabled || befundpruefungEnabled || wsdsEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || allgemeinEnabled || klemmeEnabled;
+    const ausbauTypeMissing = Boolean(ausbauWerkNr.trim() && !szaType);
+    const szaStandMissing = Boolean(ausbauWerkNr.trim() && szaType && (SZA_STAND_FIELDS[szaType] || []).some(standField => !hasNumericStandValue(szaStandValues?.[standField.field])));
+    const szeStandMissing = Boolean(!onlyRseSelected && einbauWerkNr.trim() && szeTypeSelected && (SZE_STAND_FIELDS[szeType] || []).some(standField => !hasNumericStandValue(szeStandValues?.[standField.field])));
+    const rseOnlyMissingEinbauWerkNr = Boolean(onlyRseSelected && !einbauWerkNr.trim());
+    const rseOnlyMissingGatewayWerkNr = Boolean(onlyRseSelected && !gatewayWerkNr.trim());
     const gatewayRequiresEinbau = gatewayWerkNr.trim() && !einbauWerkNr.trim();
+    const originalSourceName = selectedEditPdf?.name || 'Zaehlerwechselbeleg.pdf';
+    const filenameWasChanged = hasCustomFilename(selectedEditPdfName, originalSourceName);
+    const remarkFilenameSuffix = getRemarkFilenameSuffix(bemerkungen);
+    const filenameRequirementMissing = Boolean(selectedEditPdf && !filenameWasChanged && !remarkFilenameSuffix);
+    if (ausbauTypeMissing) {
+      Alert.alert('Ausbauart auswählen', 'Bitte wähle eine der vier Ausbauarten aus, bevor du speicherst.');
+      return;
+    }
+    if (szaStandMissing || szeStandMissing) {
+      Alert.alert('Stand fehlt', 'Bitte Stand eintragen.');
+      return;
+    }
+    if (rseOnlyMissingEinbauWerkNr || rseOnlyMissingGatewayWerkNr) {
+      Alert.alert('RSE unvollständig', 'Bei ausschließlich RSE müssen Werk Nr. Einbau und Werk Nr. Gateway eingetragen werden.');
+      return;
+    }
     if (gatewayRequiresEinbau) {
       Alert.alert('Werk Nr. Einbau erforderlich', 'Wenn eine Gateway-Werknummer eingetragen ist, muss auch eine Werknummer für den Einbau eingetragen werden.');
+      return;
+    }
+    if (filenameRequirementMissing) {
+      Alert.alert('Dateiname ändern', 'Bitte ändere den Dateinamen oder wähle eine passende Bemerkungsvorlage aus.');
       return;
     }
     if (!selectedEditPdf || !hasSelection || !selectedDate || !bildnummer.trim() || (rseEnabled && (!selectedGroup || !werkNr.trim()))) return;
     setEditBusy(true);
     try {
       const outputDirectory = getAppDirectory(FINISHED_DIRECTORY_NAME);
-      const originalSourceName = selectedEditPdf.name || 'Zaehlerwechselbeleg.pdf';
       const sourceName = ensurePdfFilename(selectedEditPdfName, originalSourceName);
       const sourceBaseName = sourceName.replace(/\.pdf$/i, '');
-      const originalBaseName = cleanFilenamePart(originalSourceName.replace(/\.pdf$/i, ''));
-      const customFilenameBase = cleanFilenamePart(selectedEditPdfName).replace(/\.pdf$/i, '').trim();
-      const hasCustomFilename = Boolean(customFilenameBase && customFilenameBase !== originalBaseName);
       const rseOnly = rseEnabled && !effectiveEinbau && !effectiveAusbau && !zlgEnabled;
-      const remarkFilenameSuffix = getRemarkFilenameSuffix(bemerkungen);
       const filenameBaseWithoutTrailingComma = cleanFilenamePart(sourceBaseName).replace(/,\s*$/, '').trim();
       const outputFilename = remarkFilenameSuffix
         ? `${filenameBaseWithoutTrailingComma}, ${remarkFilenameSuffix}.pdf`
         : rseOnly
           ? `${cleanFilenamePart(sourceBaseName)}, iMSys RSE nachgerüstet.pdf`
-          : hasCustomFilename
+            : filenameWasChanged
             ? `${cleanFilenamePart(sourceBaseName)}.pdf`
             : `${cleanFilenamePart(sourceBaseName)}_bearbeitet.pdf`;
       const outputFile = new File(outputDirectory, outputFilename);
-      const pdfBytes = await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, effectiveEinbau, effectiveAusbau, zlgEnabled, wsdsEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, allgemeinEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues, bemerkungen, bildnummer);
+      const pdfBytes = await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, effectiveEinbau, effectiveAusbau, zlgEnabled, stilllegungEnabled, turnusEnabled, befundpruefungEnabled, wsdsEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, allgemeinEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues, bemerkungen, bildnummer);
       if (await confirmFileReplacement(outputFile)) {
         saveFileBytes(outputFile, pdfBytes);
         Alert.alert('Gespeichert', `Die bearbeitete PDF wurde in „${FINISHED_DIRECTORY_NAME}“ gespeichert.`);
@@ -1076,14 +1185,18 @@ export default function App() {
       setAusbauEnabled(false);
       setSzwEnabled(false);
       setZlgEnabled(false);
+      setStilllegungEnabled(false);
+      setTurnusEnabled(false);
+      setBefundpruefungEnabled(false);
       setWsdsEnabled(false);
       setEinbauWerkNr('');
       setAusbauWerkNr('');
       setGatewayWerkNr('');
       setGatewayType('Draht');
-      setSzaType('DS');
+      setSzaType(null);
       setSzaStandValues({});
       setSzeType('ZRZ');
+      setSzeTypeSelected(false);
       setSzeStandValues({ htzst6: '0', htzst7: '0' });
       setWpEnabled(false);
       setPvEnabled(false);
@@ -1117,6 +1230,44 @@ export default function App() {
     try {
       REMARK_PRESETS_FILE.write(JSON.stringify(nextPresets));
     } catch (_) {}
+  }
+
+  const originalEditPdfName = selectedEditPdf ? removePdfExtension(selectedEditPdf.name || 'Zaehlerwechselbeleg.pdf') : '';
+  const filenameWasChanged = Boolean(selectedEditPdf && hasCustomFilename(selectedEditPdfName, originalEditPdfName));
+  const filenameFromRemark = Boolean(getRemarkFilenameSuffix(bemerkungen));
+  const filenameChangeRequired = Boolean(selectedEditPdf && !filenameWasChanged && !filenameFromRemark);
+  const szaStandMissing = Boolean(ausbauWerkNr.trim() && szaType && (SZA_STAND_FIELDS[szaType] || []).some(standField => !hasNumericStandValue(szaStandValues?.[standField.field])));
+  const onlyRseSelected = isOnlyRseSelected();
+  const szeStandMissing = Boolean(!onlyRseSelected && einbauWerkNr.trim() && szeTypeSelected && (SZE_STAND_FIELDS[szeType] || []).some(standField => !hasNumericStandValue(szeStandValues?.[standField.field])));
+
+  function getMissingEditRequirements() {
+    const effectiveEinbau = einbauEnabled || szwEnabled;
+    const effectiveAusbau = ausbauEnabled || szwEnabled;
+    const hasSelection = rseEnabled || effectiveEinbau || effectiveAusbau || zlgEnabled || stilllegungEnabled || turnusEnabled || befundpruefungEnabled || wsdsEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || allgemeinEnabled || klemmeEnabled;
+    const missing = [];
+    if (!selectedEditPdf) missing.push('PDF auswählen');
+    if (!hasSelection) missing.push('mindestens einen Grund auswählen');
+    if (!selectedDate) missing.push('Datum auswählen');
+    if (!bildnummer.trim()) missing.push('Bildnummer eingeben');
+    if (filenameChangeRequired) missing.push('Dateinamen umbenennen');
+    if (rseEnabled && !werkNr.trim()) missing.push('Werk Nr. für RSE eingeben');
+    if (onlyRseSelected && !einbauWerkNr.trim()) missing.push('Werk Nr. Einbau eingeben');
+    if (onlyRseSelected && !gatewayWerkNr.trim()) missing.push('Werk Nr. Gateway eingeben');
+    if (ausbauWerkNr.trim() && !szaType) missing.push('Ausbauart auswählen');
+    if (szaStandMissing || szeStandMissing) missing.push('Stand eintragen');
+    if (gatewayWerkNr.trim() && !einbauWerkNr.trim()) missing.push('Werk Nr. Einbau für das Gateway eingeben');
+    return [...new Set(missing)];
+  }
+
+  const missingEditRequirements = getMissingEditRequirements();
+
+  function handleEditSavePress() {
+    const missing = getMissingEditRequirements();
+    if (missing.length) {
+      Alert.alert('Noch nicht bereit', `Bitte ergänze noch:\n\n${missing.map(item => `• ${item}`).join('\n')}`);
+      return;
+    }
+    fillRsePdf();
   }
 
   if (editScreen) {
@@ -1178,6 +1329,7 @@ export default function App() {
             numberOfLines={2}
             textAlignVertical="top"
           />
+          {filenameChangeRequired && <Text style={styles.requiredFieldHint}>Bitte Dateinamen umbenennen.</Text>}
 
           <View style={styles.card}>
             <Text style={[styles.sectionTitle, styles.compactSectionTitle]}>Datum:</Text>
@@ -1186,37 +1338,21 @@ export default function App() {
               <Text style={styles.dateButtonArrow}>{calendarOpen ? '⌃' : '⌄'}</Text>
             </Pressable>
             {calendarOpen && <MiniCalendar value={selectedDate} onChange={date => { setSelectedDate(date); setCalendarOpen(false); }} />}
+            {!selectedDate && <Text style={styles.requiredFieldHint}>Bitte Datum auswählen.</Text>}
           </View>
 
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Grund:</Text>
             <View style={styles.checkboxGrid}>
-            <Pressable style={styles.checkboxGridItem} onPress={() => setEinbauEnabled(value => !value)}>
-              <View style={[styles.checkbox, einbauEnabled && styles.checkboxChecked]}>{einbauEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
-              <Text style={styles.checkboxLabel}>SZE</Text>
-            </Pressable>
-            <Pressable style={styles.checkboxGridItem} onPress={() => setAusbauEnabled(value => !value)}>
-              <View style={[styles.checkbox, ausbauEnabled && styles.checkboxChecked]}>{ausbauEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
-              <Text style={styles.checkboxLabel}>SZA</Text>
-            </Pressable>
-            <Pressable style={styles.checkboxGridItem} onPress={() => setSzwEnabled(value => !value)}>
-              <View style={[styles.checkbox, szwEnabled && styles.checkboxChecked]}>{szwEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
-              <Text style={styles.checkboxLabel}>SZW</Text>
-            </Pressable>
-            <Pressable style={styles.checkboxGridItem} onPress={() => setZlgEnabled(value => !value)}>
-              <View style={[styles.checkbox, zlgEnabled && styles.checkboxChecked]}>{zlgEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
-              <Text style={styles.checkboxLabel}>ZLG</Text>
-            </Pressable>
-            <Pressable style={styles.checkboxGridItem} onPress={() => setRseEnabled(value => !value)}>
-              <View style={[styles.checkbox, rseEnabled && styles.checkboxChecked]}>
-                {rseEnabled && <Text style={styles.checkmark}>✓</Text>}
-              </View>
-              <Text style={styles.checkboxLabel}>RSE</Text>
-            </Pressable>
-            <Pressable style={styles.checkboxGridItem} onPress={() => setWsdsEnabled(value => !value)}>
-              <View style={[styles.checkbox, wsdsEnabled && styles.checkboxChecked]}>{wsdsEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
-              <Text style={styles.checkboxLabel}>WS/DS</Text>
-            </Pressable>
+            <GrundCheckbox label="Einbau" checked={einbauEnabled} onPress={() => setEinbauEnabled(value => !value)} />
+            <GrundCheckbox label="Ausbau" checked={ausbauEnabled} onPress={() => setAusbauEnabled(value => !value)} />
+            <GrundCheckbox label="SZW" checked={szwEnabled} onPress={() => setSzwEnabled(value => !value)} />
+            <GrundCheckbox label="Turnus" checked={turnusEnabled} onPress={() => setTurnusEnabled(value => !value)} />
+            <GrundCheckbox label="Befundprüfung" checked={befundpruefungEnabled} onPress={() => setBefundpruefungEnabled(value => !value)} />
+            <GrundCheckbox label="WS/DS" checked={wsdsEnabled} onPress={() => setWsdsEnabled(value => !value)} />
+            <GrundCheckbox label="Stilllegung" checked={stilllegungEnabled} onPress={() => setStilllegungEnabled(value => !value)} />
+            <GrundCheckbox label="Zusammenlegung" checked={zlgEnabled} onPress={() => setZlgEnabled(value => !value)} />
+            <GrundCheckbox label="RSE" checked={rseEnabled} onPress={() => setRseEnabled(value => !value)} />
             </View>
 
             {rseEnabled && <>
@@ -1250,7 +1386,7 @@ export default function App() {
               <Text style={[styles.subsectionTitle, styles.subsectionTitleAusbau]}>Ausbau</Text>
               <Text style={styles.label}>Werk Nr. Ausbau</Text>
               <View style={styles.scannerInputRow}>
-                <TextInput value={ausbauWerkNr} onChangeText={setAusbauWerkNr} placeholder="Werknummer eingeben oder scannen" placeholderTextColor="#8a96aa" style={[styles.input, styles.scannerInput]} autoCapitalize="characters" />
+              <TextInput value={ausbauWerkNr} onChangeText={value => { setAusbauWerkNr(value); if (!value.trim()) setSzaType(null); }} placeholder="Werknummer eingeben oder scannen" placeholderTextColor="#8a96aa" style={[styles.input, styles.scannerInput]} autoCapitalize="characters" />
                 <Pressable style={styles.scanButton} onPress={() => openScanner('ausbau')}><Text style={styles.scanButtonText}>Scannen</Text></Pressable>
               </View>
               {ausbauWerkNr.trim() && <>
@@ -1260,7 +1396,8 @@ export default function App() {
                     <Text style={[styles.gatewayTypeText, szaType === type && styles.gatewayTypeTextSelected]}>{type}</Text>
                   </Pressable>)}
                 </View>
-                <View style={styles.szaStandGrid}>
+                {!szaType && <Text style={styles.requiredFieldHint}>Bitte Ausbauart auswählen.</Text>}
+                {szaType && <View style={styles.szaStandGrid}>
                   {(SZA_STAND_FIELDS[szaType] || []).map(standField => <View key={standField.field} style={styles.szaStandItem}>
                     {standField.label ? <Text style={styles.szaStandLabel}>{standField.label}</Text> : null}
                     <TextInput
@@ -1273,7 +1410,8 @@ export default function App() {
                       inputMode="decimal"
                     />
                   </View>)}
-                </View>
+                </View>}
+                {szaStandMissing && <Text style={styles.requiredFieldHint}>Bitte Stand eintragen.</Text>}
               </>}
             </View>
 
@@ -1284,10 +1422,11 @@ export default function App() {
                 <TextInput value={einbauWerkNr} onChangeText={setEinbauWerkNr} placeholder="Werknummer eingeben oder scannen" placeholderTextColor="#8a96aa" style={[styles.input, styles.scannerInput]} autoCapitalize="characters" />
                 <Pressable style={styles.scanButton} onPress={() => openScanner('einbau')}><Text style={styles.scanButtonText}>Scannen</Text></Pressable>
               </View>
-              {(einbauEnabled || szwEnabled) && einbauWerkNr.trim() && <>
+              {onlyRseSelected && !einbauWerkNr.trim() && <Text style={styles.requiredFieldHint}>Bitte Werk Nr. Einbau eingeben.</Text>}
+              {einbauWerkNr.trim() && !onlyRseSelected && <>
                 <Text style={styles.label}>Einbauart</Text>
                 <View style={styles.szaTypeRow}>
-                  {SZE_TYPES.map(type => <Pressable key={type} style={[styles.gatewayTypeButton, szeType === type && styles.gatewayTypeButtonSelected]} onPress={() => setSzeType(type)}>
+                  {SZE_TYPES.map(type => <Pressable key={type} style={[styles.gatewayTypeButton, szeType === type && styles.gatewayTypeButtonSelected]} onPress={() => { setSzeType(type); setSzeTypeSelected(true); }}>
                     <Text style={[styles.gatewayTypeText, szeType === type && styles.gatewayTypeTextSelected]}>{type}</Text>
                   </Pressable>)}
                 </View>
@@ -1305,6 +1444,7 @@ export default function App() {
                     />
                   </View>)}
                 </View>
+                {szeStandMissing && <Text style={styles.requiredFieldHint}>Bitte Stand eintragen.</Text>}
               </>}
             </View>
 
@@ -1315,6 +1455,7 @@ export default function App() {
                 <TextInput value={gatewayWerkNr} onChangeText={setGatewayWerkNr} placeholder="Werknummer eingeben oder QR scannen" placeholderTextColor="#8a96aa" style={[styles.input, styles.scannerInput]} autoCapitalize="characters" />
                 <Pressable style={styles.scanButton} onPress={() => openScanner('gateway')}><Text style={styles.scanButtonText}>Scannen</Text></Pressable>
               </View>
+              {onlyRseSelected && !gatewayWerkNr.trim() && <Text style={styles.requiredFieldHint}>Bitte Werk Nr. Gateway eingeben.</Text>}
               {gatewayWerkNr.trim() && !einbauWerkNr.trim() && <Text style={styles.gatewayRequiredHint}>Für eine Gateway-Werknummer ist auch eine Werk Nr. Einbau erforderlich.</Text>}
               {gatewayWerkNr.trim() && <>
                 <Text style={styles.label}>Übertragung Gateway</Text>
@@ -1412,7 +1553,7 @@ export default function App() {
             </View>}
           </View>
 
-          <Pressable style={[styles.button, styles.primary, (() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wsdsEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || allgemeinEnabled || klemmeEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || !bildnummer.trim() || (rseEnabled && !werkNr.trim()) || (gatewayWerkNr.trim() && !einbauWerkNr.trim()) || editBusy; })() && styles.disabled]} disabled={(() => { const hasSelection = rseEnabled || einbauEnabled || ausbauEnabled || szwEnabled || zlgEnabled || wsdsEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || allgemeinEnabled || klemmeEnabled; return !selectedEditPdf || !hasSelection || !selectedDate || !bildnummer.trim() || (rseEnabled && !werkNr.trim()) || (gatewayWerkNr.trim() && !einbauWerkNr.trim()) || editBusy; })()} onPress={fillRsePdf}>
+          <Pressable style={[styles.button, styles.primary, (missingEditRequirements.length > 0 || editBusy) && styles.disabled]} disabled={editBusy} onPress={handleEditSavePress}>
             {editBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>PDF erstellen und speichern</Text>}
           </Pressable>
           <Pressable style={[styles.button, styles.bottomBackButton]} onPress={() => setEditScreen(false)}>
@@ -1433,7 +1574,6 @@ export default function App() {
             <Image source={require('./assets/icon.png')} style={styles.homeLogo} resizeMode="contain" />
           </View>
           <Text style={styles.homeTitle}>MyPDFTool</Text>
-          <Text style={styles.subtitle}>Zählerwechselbeleg ausfüllen</Text>
         </View>
 
         <View style={styles.homeActions}>
@@ -1460,12 +1600,17 @@ export default function App() {
           </Pressable>
         </View>
 
-        <Text style={styles.version}>Update Version 1.3</Text>
       </View>
       <Modal visible={manualSourceOpen} animationType="slide" transparent onRequestClose={() => setManualSourceOpen(false)}>
         <KeyboardAvoidingView style={styles.manualModalBackdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={styles.manualModalCard}>
-            <Text style={styles.manualModalTitle}>Quelle Manuell</Text>
+            <View style={styles.manualModalHeader}>
+              <View style={styles.manualModalIcon}><Text style={styles.manualModalIconText}>✎</Text></View>
+              <View style={styles.manualModalHeadingCopy}>
+                <Text style={styles.manualModalEyebrow}>MANUELLER IMPORT</Text>
+                <Text style={styles.manualModalTitle}>Quelle manuell</Text>
+              </View>
+            </View>
             <Text style={styles.manualModalHint}>3 Zeilen: Name, Straße/Hausnummer, PLZ/Gemeinde/Ortsteil. Bei 4 Zeilen ist die zweite Zeile die Firma.</Text>
             <TextInput
               value={manualSourceText}
@@ -1480,7 +1625,7 @@ export default function App() {
             />
             <View style={styles.manualModalActions}>
               <Pressable style={[styles.button, styles.manualCancelButton]} onPress={() => setManualSourceOpen(false)} disabled={busy}>
-                <Text style={styles.buttonText}>Abbrechen</Text>
+                <Text style={styles.manualCancelButtonText}>Abbrechen</Text>
               </Pressable>
               <Pressable style={[styles.button, styles.primary, styles.manualSaveButton, busy && styles.disabled]} onPress={fillManualSource} disabled={busy}>
                 {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Speichern</Text>}
@@ -1524,14 +1669,20 @@ const styles = StyleSheet.create({
   button: { minHeight: 54, borderRadius: 12, backgroundColor: '#dce4f2', alignItems: 'center', justifyContent: 'center', marginTop: 24 },
   primary: { backgroundColor: '#2457d6', marginTop: 12 },
   disabled: { opacity: 0.45 },
-  manualModalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
-  manualModalCard: { padding: 24, borderTopLeftRadius: 22, borderTopRightRadius: 22, backgroundColor: '#f5f7fb' },
-  manualModalTitle: { color: '#172033', fontSize: 24, fontWeight: '700' },
-  manualModalHint: { marginTop: 8, color: '#53627b', fontSize: 14, lineHeight: 20 },
-  manualSourceInput: { marginTop: 18, minHeight: 58, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: '#172033', fontSize: 16, lineHeight: 24, backgroundColor: '#fff' },
+  manualModalBackdrop: { flex: 1, justifyContent: 'center', padding: 16, backgroundColor: 'rgba(3,10,28,0.78)' },
+  manualModalCard: { width: '100%', maxWidth: 560, alignSelf: 'center', padding: 22, borderRadius: 26, backgroundColor: '#102242', borderWidth: 1, borderColor: 'rgba(126,211,255,0.38)', shadowColor: '#229cff', shadowOpacity: 0.28, shadowRadius: 24, shadowOffset: { width: 0, height: 10 }, elevation: 10 },
+  manualModalHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
+  manualModalIcon: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1b73d1', borderWidth: 1, borderColor: '#55c8ff', marginRight: 12 },
+  manualModalIconText: { color: '#fff', fontSize: 25, fontWeight: '700' },
+  manualModalHeadingCopy: { flex: 1 },
+  manualModalEyebrow: { color: '#7ed3ff', fontSize: 11, fontWeight: '800', letterSpacing: 1.4 },
+  manualModalTitle: { marginTop: 2, color: '#fff', fontSize: 25, fontWeight: '800' },
+  manualModalHint: { marginTop: 2, color: '#b8cae8', fontSize: 14, lineHeight: 20 },
+  manualSourceInput: { marginTop: 18, minHeight: 58, borderWidth: 1, borderColor: 'rgba(126,211,255,0.45)', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, color: '#fff', fontSize: 16, lineHeight: 24, backgroundColor: '#091a37' },
   manualModalActions: { flexDirection: 'row', gap: 8, marginTop: 14 },
-  manualCancelButton: { flex: 1, marginTop: 0 },
+  manualCancelButton: { flex: 1, marginTop: 0, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)' },
   manualSaveButton: { flex: 1, marginTop: 0 },
+  manualCancelButtonText: { color: '#d9e7ff', fontSize: 17, fontWeight: '600' },
   buttonText: { color: '#172033', fontSize: 17, fontWeight: '600' },
   primaryButtonText: { color: '#fff', fontSize: 17, fontWeight: '600' },
   secondary: { backgroundColor: '#eef2f8', marginTop: 12, borderWidth: 1, borderColor: '#cbd5e5' },
@@ -1554,7 +1705,6 @@ const styles = StyleSheet.create({
   newPresetInput: { flex: 1, minHeight: 44, fontSize: 14 },
   savePresetAction: { minHeight: 44, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#2457d6', alignItems: 'center', justifyContent: 'center' },
   savePresetActionText: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  version: { position: 'absolute', right: 12, bottom: 8, color: '#9aa5b8', fontSize: 11 },
   editContainer: { padding: 24, paddingBottom: 300 },
   backButton: { alignSelf: 'flex-start', paddingVertical: 8, paddingRight: 18 },
   bottomBackButton: { marginTop: 16, marginBottom: 24, backgroundColor: '#eef2f8', borderWidth: 1, borderColor: '#cbd5e5' },
@@ -1572,12 +1722,13 @@ const styles = StyleSheet.create({
   compactSectionTitle: { marginBottom: 4 },
   sectionHint: { color: '#71809a', fontSize: 13, lineHeight: 19, marginTop: -8 },
   checkboxRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
-  checkbox: { width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: '#9aa5b8', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: '#9aa5b8', alignItems: 'center', justifyContent: 'center', marginRight: 8 },
   checkboxChecked: { backgroundColor: '#2457d6', borderColor: '#2457d6' },
   checkmark: { color: '#fff', fontWeight: '700', fontSize: 17 },
-  checkboxLabel: { color: '#172033', fontSize: 17, fontWeight: '600' },
-  checkboxGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  checkboxGridItem: { width: '48%', flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
+  checkboxLabel: { flex: 1, flexShrink: 1, color: '#172033', fontSize: 17, lineHeight: 21, fontWeight: '600' },
+  checkboxLabelLong: { fontSize: 14, lineHeight: 18, letterSpacing: -0.1 },
+  checkboxGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 2 },
+  checkboxGridItem: { width: '50%', flexDirection: 'row', alignItems: 'center', paddingVertical: 9, paddingRight: 6 },
   label: { color: '#53627b', fontSize: 14, fontWeight: '600', marginTop: 22, marginBottom: 8 },
   dropdown: { minHeight: 50, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f8fafc' },
   dropdownText: { color: '#172033', fontSize: 16 },
@@ -1624,22 +1775,24 @@ const styles = StyleSheet.create({
   dateButtonText: { flex: 1, color: '#172033', fontSize: 16, fontWeight: '600', textAlign: 'center' },
   dateButtonValue: { fontSize: 18, fontWeight: '700' },
   dateButtonArrow: { position: 'absolute', right: 14, color: '#53627b', fontSize: 20, fontWeight: '700' },
-  calendar: { marginTop: 4, padding: 12, borderRadius: 12, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e1e7f0' },
-  calendarHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  calendarArrow: { width: 38, height: 36, alignItems: 'center', justifyContent: 'center' },
-  calendarArrowText: { color: '#2457d6', fontSize: 30, lineHeight: 32 },
-  monthTitleButton: { paddingHorizontal: 12, paddingVertical: 8 },
-  monthTitle: { color: '#172033', fontSize: 16, fontWeight: '700' },
-  weekdayRow: { flexDirection: 'row', marginBottom: 4 },
+  calendar: { width: '100%', marginTop: 4, padding: 12, borderRadius: 16, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e1e7f0', overflow: 'hidden' },
+  calendarHeader: { width: '100%', flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  calendarArrow: { flexShrink: 0, width: 42, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: '#e8efff' },
+  calendarArrowText: { color: '#2457d6', fontSize: 30, lineHeight: 34, fontWeight: '400' },
+  monthTitleButton: { flex: 1, minWidth: 0, height: 42, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
+  monthTitle: { width: '100%', color: '#172033', fontSize: 16, fontWeight: '700', textAlign: 'center' },
+  weekdayRow: { flexDirection: 'row', marginBottom: 6 },
   weekday: { width: '14.2857%', textAlign: 'center', color: '#71809a', fontSize: 12, fontWeight: '700' },
   calendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  dayCell: { width: '14.2857%', height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19 },
+  dayCell: { width: '14.2857%', height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22 },
+  dayCellToday: { borderWidth: 2, borderColor: '#2457d6', backgroundColor: '#e8efff' },
   dayCellSelected: { backgroundColor: '#2457d6' },
-  dayText: { color: '#172033', fontSize: 15 },
+  dayText: { color: '#172033', fontSize: 16, fontWeight: '400' },
+  dayTextToday: { color: '#2457d6', fontWeight: '800' },
   dayTextSelected: { color: '#fff', fontWeight: '700' },
   monthMenu: { marginBottom: 10, borderRadius: 10, backgroundColor: '#fff', borderWidth: 1, borderColor: '#cbd5e5', overflow: 'hidden' },
-  monthItem: { paddingVertical: 9, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: '#eef2f8' },
+  monthItem: { paddingVertical: 13, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#eef2f8' },
   monthItemSelected: { backgroundColor: '#e8efff' },
-  monthItemText: { color: '#172033', fontSize: 14 },
+  monthItemText: { color: '#172033', fontSize: 16 },
   monthItemTextSelected: { color: '#2457d6', fontWeight: '700' }
 });
