@@ -169,8 +169,9 @@ function hasCustomFilename(value, originalName) {
   return Boolean(currentBaseName && currentBaseName !== originalBaseName);
 }
 
-function hasNumericStandValue(value) {
-  return /^\d+$/.test(String(value || '').trim());
+function hasNumericStandValue(value, allowComma = false) {
+  const normalized = String(value || '').trim();
+  return allowComma ? /^\d+(?:,\d+)?$/.test(normalized) : /^\d+$/.test(normalized);
 }
 
 function splitRemarkFields(value) {
@@ -1098,7 +1099,7 @@ export default function App() {
     const onlyRseSelected = isOnlyRseSelected();
     const hasSelection = rseEnabled || effectiveEinbau || effectiveAusbau || zlgEnabled || stilllegungEnabled || turnusEnabled || befundpruefungEnabled || wsdsEnabled || wpEnabled || pvEnabled || haushaltEnabled || gewerbeEnabled || baustromEnabled || allgemeinEnabled || klemmeEnabled;
     const ausbauTypeMissing = Boolean(ausbauWerkNr.trim() && !szaType);
-    const szaStandMissing = Boolean(ausbauWerkNr.trim() && szaType && (SZA_STAND_FIELDS[szaType] || []).some(standField => !hasNumericStandValue(szaStandValues?.[standField.field])));
+    const szaStandMissing = Boolean(ausbauWerkNr.trim() && szaType && (SZA_STAND_FIELDS[szaType] || []).some(standField => !hasNumericStandValue(szaStandValues?.[standField.field], szaType === 'ALT')));
     const szeStandMissing = Boolean(!onlyRseSelected && einbauWerkNr.trim() && szeTypeSelected && (SZE_STAND_FIELDS[szeType] || []).some(standField => !hasNumericStandValue(szeStandValues?.[standField.field])));
     const rseOnlyMissingEinbauWerkNr = Boolean(onlyRseSelected && !einbauWerkNr.trim());
     const rseOnlyMissingGatewayWerkNr = Boolean(onlyRseSelected && !gatewayWerkNr.trim());
@@ -1236,7 +1237,7 @@ export default function App() {
   const filenameWasChanged = Boolean(selectedEditPdf && hasCustomFilename(selectedEditPdfName, originalEditPdfName));
   const filenameFromRemark = Boolean(getRemarkFilenameSuffix(bemerkungen));
   const filenameChangeRequired = Boolean(selectedEditPdf && !filenameWasChanged && !filenameFromRemark);
-  const szaStandMissing = Boolean(ausbauWerkNr.trim() && szaType && (SZA_STAND_FIELDS[szaType] || []).some(standField => !hasNumericStandValue(szaStandValues?.[standField.field])));
+  const szaStandMissing = Boolean(ausbauWerkNr.trim() && szaType && (SZA_STAND_FIELDS[szaType] || []).some(standField => !hasNumericStandValue(szaStandValues?.[standField.field], szaType === 'ALT')));
   const onlyRseSelected = isOnlyRseSelected();
   const szeStandMissing = Boolean(!onlyRseSelected && einbauWerkNr.trim() && szeTypeSelected && (SZE_STAND_FIELDS[szeType] || []).some(standField => !hasNumericStandValue(szeStandValues?.[standField.field])));
 
@@ -1402,12 +1403,12 @@ export default function App() {
                     {standField.label ? <Text style={styles.szaStandLabel}>{standField.label}</Text> : null}
                     <TextInput
                       value={szaStandValues[standField.field] || ''}
-                      onChangeText={value => setSzaStandValues(current => ({ ...current, [standField.field]: value.replace(/[^0-9,]/g, '') }))}
+                      onChangeText={value => setSzaStandValues(current => ({ ...current, [standField.field]: szaType === 'ALT' ? value.replace(/[^0-9,]/g, '').replace(/(,.*),/g, '$1') : value.replace(/[^0-9]/g, '') }))}
                       placeholder={standField.label ? 'Stand eingeben' : 'Stand eingeben'}
                       placeholderTextColor="#8a96aa"
                       style={styles.szaStandInput}
-                      keyboardType="decimal-pad"
-                      inputMode="decimal"
+                      keyboardType={szaType === 'ALT' ? 'decimal-pad' : 'numeric'}
+                      inputMode={szaType === 'ALT' ? 'decimal' : 'numeric'}
                     />
                   </View>)}
                 </View>}
@@ -1435,12 +1436,12 @@ export default function App() {
                     <Text style={styles.szaStandLabel}>{standField.label}</Text>
                     <TextInput
                       value={szeStandValues[standField.field] || ''}
-                      onChangeText={value => setSzeStandValues(current => ({ ...current, [standField.field]: value.replace(/[^0-9,]/g, '') }))}
+                      onChangeText={value => setSzeStandValues(current => ({ ...current, [standField.field]: value.replace(/[^0-9]/g, '') }))}
                       placeholder="Stand eingeben"
                       placeholderTextColor="#8a96aa"
                       style={styles.szaStandInput}
-                      keyboardType="decimal-pad"
-                      inputMode="decimal"
+                      keyboardType="numeric"
+                      inputMode="numeric"
                     />
                   </View>)}
                 </View>
