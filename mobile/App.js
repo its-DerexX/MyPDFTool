@@ -171,7 +171,16 @@ function hasCustomFilename(value, originalName) {
 
 function hasNumericStandValue(value, allowComma = false) {
   const normalized = String(value || '').trim();
-  return allowComma ? /^\d+(?:,\d+)?$/.test(normalized) : /^\d+$/.test(normalized);
+  return allowComma ? /^\d+,\d$/.test(normalized) : /^\d+$/.test(normalized);
+}
+
+function sanitizeAltStandValue(value) {
+  const sanitized = String(value || '').replace(/[^0-9,]/g, '');
+  const commaIndex = sanitized.indexOf(',');
+  if (commaIndex < 0) return sanitized;
+  const wholePart = sanitized.slice(0, commaIndex);
+  const decimalPart = sanitized.slice(commaIndex + 1).replace(/,/g, '').slice(0, 1);
+  return `${wholePart},${decimalPart}`;
 }
 
 function splitRemarkFields(value) {
@@ -1403,7 +1412,7 @@ export default function App() {
                     {standField.label ? <Text style={styles.szaStandLabel}>{standField.label}</Text> : null}
                     <TextInput
                       value={szaStandValues[standField.field] || ''}
-                      onChangeText={value => setSzaStandValues(current => ({ ...current, [standField.field]: szaType === 'ALT' ? value.replace(/[^0-9,]/g, '').replace(/(,.*),/g, '$1') : value.replace(/[^0-9]/g, '') }))}
+                      onChangeText={value => setSzaStandValues(current => ({ ...current, [standField.field]: szaType === 'ALT' ? sanitizeAltStandValue(value) : value.replace(/[^0-9]/g, '') }))}
                       placeholder={standField.label ? 'Stand eingeben' : 'Stand eingeben'}
                       placeholderTextColor="#8a96aa"
                       style={styles.szaStandInput}
