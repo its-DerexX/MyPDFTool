@@ -794,7 +794,7 @@ function drawRseEinbauStrike(targetPdf) {
   }
 }
 
-async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnabled, ausbauEnabled, zusammenlegungEnabled, stilllegungEnabled, turnusEnabled, befundpruefungEnabled, wsdsEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, allgemeinEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues, bemerkungen, bildnummer) {
+async function createRsePdf(sourceUri, group, rsePlacement, werkNr, selectedDate, einbauEnabled, ausbauEnabled, zusammenlegungEnabled, stilllegungEnabled, turnusEnabled, befundpruefungEnabled, wsdsEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, allgemeinEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues, bemerkungen, bildnummer) {
   const targetPdf = await PDFDocument.load(await readPdf(sourceUri));
   const targetForm = targetPdf.getForm();
   const onlyRseSelected = Boolean(group)
@@ -864,11 +864,12 @@ async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnable
   }
   if (group && werkNr.trim()) {
     const groupNumber = Number(group.slice(-2));
+    const rowSuffix = rsePlacement === 'ausbau' ? 'Row1' : 'Row2';
     Object.assign(fields, {
-      'Werk NrRow2': werkNr.trim(),
-      TypRow2: 'LCR 160',
-      CodeRow2: `613/${String(5 + groupNumber).padStart(2, '0')}`,
-      VerwendungsartRow2: group
+      [`Werk Nr${rowSuffix}`]: werkNr.trim(),
+      [`Typ${rowSuffix}`]: 'LCR 160',
+      [`Code${rowSuffix}`]: `613/${String(5 + groupNumber).padStart(2, '0')}`,
+      [`Verwendungsart${rowSuffix}`]: group
     });
   }
   if (selectedDate) {
@@ -886,7 +887,7 @@ async function createRsePdf(sourceUri, group, werkNr, selectedDate, einbauEnable
   await updateGatewayAnnotation(targetPdf, gatewayWerkNr, gatewayType);
 
   await updateAutoSizedFormAppearances(targetPdf, targetForm);
-  if (group) drawRseEinbauStrike(targetPdf);
+  if (onlyRseSelected) drawRseEinbauStrike(targetPdf);
   return targetPdf.save({ updateFieldAppearances: false });
 }
 
@@ -905,6 +906,7 @@ export default function App() {
   const [selectedEditPdf, setSelectedEditPdf] = useState(null);
   const [selectedEditPdfName, setSelectedEditPdfName] = useState('');
   const [rseEnabled, setRseEnabled] = useState(false);
+  const [rsePlacement, setRsePlacement] = useState('einbau');
   const [groupMenuOpen, setGroupMenuOpen] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState(EEG_GROUPS[0]);
   const [groupAutoDetected, setGroupAutoDetected] = useState(false);
@@ -1153,7 +1155,7 @@ export default function App() {
             ? `${cleanFilenamePart(sourceBaseName)}.pdf`
             : `${cleanFilenamePart(sourceBaseName)}_bearbeitet.pdf`;
       const outputFile = new File(outputDirectory, outputFilename);
-      const pdfBytes = await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, werkNr, selectedDate, effectiveEinbau, effectiveAusbau, zlgEnabled, stilllegungEnabled, turnusEnabled, befundpruefungEnabled, wsdsEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, allgemeinEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues, bemerkungen, bildnummer);
+      const pdfBytes = await createRsePdf(selectedEditPdf.uri, rseEnabled ? selectedGroup : null, rsePlacement, werkNr, selectedDate, effectiveEinbau, effectiveAusbau, zlgEnabled, stilllegungEnabled, turnusEnabled, befundpruefungEnabled, wsdsEnabled, wpEnabled, pvEnabled, haushaltEnabled, gewerbeEnabled, baustromEnabled, allgemeinEnabled, klemmeEnabled, einbauWerkNr, ausbauWerkNr, gatewayWerkNr, gatewayType, szaType, szaStandValues, szeType, szeStandValues, bemerkungen, bildnummer);
       if (await confirmFileReplacement(outputFile)) {
         saveFileBytes(outputFile, pdfBytes);
         Alert.alert('Gespeichert', `Die bearbeitete PDF wurde in „${FINISHED_DIRECTORY_NAME}“ gespeichert.`);
@@ -1187,6 +1189,7 @@ export default function App() {
       setSelectedEditPdfName(removePdfExtension(selectedAsset.name || 'Zaehlerwechselbeleg.pdf'));
       setSelectedFileNameSelection({ start: 0, end: 0 });
       setRseEnabled(false);
+      setRsePlacement('einbau');
       setSelectedGroup(detectedGroup || EEG_GROUPS[0]);
       setGroupAutoDetected(Boolean(detectedGroup));
       setGroupMenuOpen(false);
@@ -1386,6 +1389,18 @@ export default function App() {
                 keyboardType="numeric"
                 inputMode="numeric"
               />
+              <View style={styles.gatewayTypeRow}>
+                {[
+                  ['einbau', 'Einbau'],
+                  ['ausbau', 'Ausbau']
+                ].map(([value, label]) => <Pressable
+                  key={value}
+                  style={[styles.gatewayTypeButton, rsePlacement === value && styles.gatewayTypeButtonSelected]}
+                  onPress={() => setRsePlacement(value)}
+                >
+                  <Text style={[styles.gatewayTypeText, rsePlacement === value && styles.gatewayTypeTextSelected]}>{label}</Text>
+                </Pressable>)}
+              </View>
               <Text style={styles.hint}>Typ: LCR 160 · Code: {`613/${String(5 + Number(selectedGroup.slice(-2))).padStart(2, '0')}`}</Text>
             </>}
           </View>
