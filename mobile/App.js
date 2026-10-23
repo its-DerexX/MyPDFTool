@@ -564,6 +564,19 @@ function GrundCheckbox({ label, checked, onPress }) {
   );
 }
 
+function TrashIcon() {
+  return (
+    <View style={styles.trashIcon}>
+      <View style={styles.trashHandle} />
+      <View style={styles.trashLid} />
+      <View style={styles.trashBody}>
+        <View style={styles.trashLine} />
+        <View style={styles.trashLine} />
+      </View>
+    </View>
+  );
+}
+
 function escapePdfLiteral(value) {
   return String(value || '')
     .replace(/\\/g, '\\\\')
@@ -875,6 +888,7 @@ export default function App() {
   const [bemerkungen, setBemerkungen] = useState('');
   const [remarkPresets, setRemarkPresets] = useState(DEFAULT_REMARK_PRESETS);
   const [remarkMenuOpen, setRemarkMenuOpen] = useState(false);
+  const [remarkDeleteMode, setRemarkDeleteMode] = useState(false);
   const [newRemarkPreset, setNewRemarkPreset] = useState('');
   const [newRemarkPresetOpen, setNewRemarkPresetOpen] = useState(false);
   const [rseRemarkAuto, setRseRemarkAuto] = useState(false);
@@ -1154,6 +1168,7 @@ export default function App() {
       setBemerkungen('');
       setRseRemarkAuto(false);
       setRemarkMenuOpen(false);
+      setRemarkDeleteMode(false);
       setNewRemarkPreset('');
       setNewRemarkPresetOpen(false);
       setEditScreen(true);
@@ -1170,15 +1185,42 @@ export default function App() {
     setNewRemarkPreset('');
     setNewRemarkPresetOpen(false);
     setRemarkMenuOpen(false);
+    setRemarkDeleteMode(false);
     try {
       REMARK_PRESETS_FILE.write(JSON.stringify(nextPresets));
     } catch (_) {}
+  }
+
+  function deleteRemarkPreset(value) {
+    Alert.alert(
+      'Vorlage löschen',
+      `Soll die eigene Vorlage „${value}“ wirklich gelöscht werden?`,
+      [
+        { text: 'Abbrechen', style: 'cancel' },
+        {
+          text: 'Löschen',
+          style: 'destructive',
+          onPress: () => {
+            const nextPresets = remarkPresets.filter(preset => preset !== value);
+            setRemarkPresets(nextPresets);
+            if (bemerkungen === value) {
+              setBemerkungen('');
+              setRseRemarkAuto(false);
+            }
+            try {
+              REMARK_PRESETS_FILE.write(JSON.stringify(nextPresets));
+            } catch (_) {}
+          }
+        }
+      ]
+    );
   }
 
   const originalEditPdfName = selectedEditPdf ? removePdfExtension(selectedEditPdf.name || 'Zaehlerwechselbeleg.pdf') : '';
   const filenameWasChanged = Boolean(selectedEditPdf && hasCustomFilename(selectedEditPdfName, originalEditPdfName));
   const filenameFromRemark = Boolean(getRemarkFilenameSuffix(bemerkungen));
   const filenameChangeRequired = Boolean(selectedEditPdf && !filenameWasChanged && !filenameFromRemark);
+  const customRemarkPresets = remarkPresets.filter(preset => !DEFAULT_REMARK_PRESETS.includes(preset));
   const szaStandMissing = Boolean(ausbauWerkNr.trim() && szaType && (SZA_STAND_FIELDS[szaType] || []).some(standField => !hasNumericStandValue(szaStandValues?.[standField.field], szaType === 'ALT')));
   const onlyRseSelected = isOnlyRseSelected();
   const szeStandMissing = Boolean(!onlyRseSelected && einbauWerkNr.trim() && szeTypeSelected && (SZE_STAND_FIELDS[szeType] || []).some(standField => !hasNumericStandValue(szeStandValues?.[standField.field])));
@@ -1482,7 +1524,7 @@ export default function App() {
               multiline
               textAlignVertical="top"
             />
-            <Pressable style={styles.remarkPresetToggle} onPress={() => setRemarkMenuOpen(open => !open)}>
+            <Pressable style={styles.remarkPresetToggle} onPress={() => { setRemarkMenuOpen(open => !open); setRemarkDeleteMode(false); }}>
               <Text style={styles.remarkPresetToggleText}>Bemerkung auswählen</Text>
               <View style={styles.remarkPresetArrow}><Text style={styles.remarkPresetArrowText}>{remarkMenuOpen ? '⌃' : '⌄'}</Text></View>
             </Pressable>
@@ -1491,9 +1533,32 @@ export default function App() {
                 <Text style={styles.remarkPresetText}>{preset}</Text>
               </Pressable>)}
             </View>}
-            {!newRemarkPresetOpen && <Pressable style={styles.savePresetButton} onPress={() => setNewRemarkPresetOpen(true)}>
-              <Text style={styles.savePresetButtonText}>Neue Vorlage speichern</Text>
-            </Pressable>}
+            <View style={styles.remarkPresetActions}>
+              {!newRemarkPresetOpen && <Pressable style={styles.savePresetButton} onPress={() => { setNewRemarkPresetOpen(true); setRemarkDeleteMode(false); }}>
+                <Text style={styles.savePresetButtonText}>Neue Vorlage speichern</Text>
+              </Pressable>}
+              <Pressable
+                style={[styles.deletePresetButton, remarkDeleteMode && styles.deletePresetButtonActive]}
+                accessibilityRole="button"
+                accessibilityLabel="Eigene Bemerkungsvorlagen löschen"
+                onPress={() => { setRemarkDeleteMode(open => !open); setRemarkMenuOpen(false); }}
+              >
+                <TrashIcon />
+              </Pressable>
+            </View>
+            {remarkDeleteMode && <View style={styles.remarkDeleteMenu}>
+              {customRemarkPresets.length ? customRemarkPresets.map(preset => <View key={preset} style={styles.remarkDeleteItem}>
+                <Text style={styles.remarkPresetText} numberOfLines={2}>{preset}</Text>
+                <Pressable
+                  style={styles.remarkDeleteItemButton}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Vorlage ${preset} löschen`}
+                  onPress={() => deleteRemarkPreset(preset)}
+                >
+                  <TrashIcon />
+                </Pressable>
+              </View>) : <Text style={styles.remarkDeleteEmpty}>Keine eigenen Vorlagen vorhanden.</Text>}
+            </View>}
             {newRemarkPresetOpen && <View style={styles.newPresetRow}>
               <TextInput
                 value={newRemarkPreset}
@@ -1654,8 +1719,20 @@ const styles = StyleSheet.create({
   remarkPresetMenu: { marginTop: 4, borderWidth: 1, borderColor: '#cbd5e5', borderRadius: 10, overflow: 'hidden', backgroundColor: '#fff' },
   remarkPresetItem: { paddingHorizontal: 12, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: '#eef2f8' },
   remarkPresetText: { color: '#172033', fontSize: 15 },
-  savePresetButton: { alignSelf: 'flex-start', marginTop: 10, paddingVertical: 6 },
+  remarkPresetActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, minHeight: 48 },
+  savePresetButton: { flex: 1, paddingVertical: 6 },
   savePresetButtonText: { color: '#2457d6', fontSize: 14, fontWeight: '600' },
+  deletePresetButton: { width: 52, height: 48, marginLeft: 10, borderRadius: 10, backgroundColor: '#fee2e2', alignItems: 'center', justifyContent: 'center' },
+  deletePresetButtonActive: { backgroundColor: '#fecaca' },
+  remarkDeleteMenu: { marginTop: 4, borderWidth: 1, borderColor: '#fecaca', borderRadius: 10, overflow: 'hidden', backgroundColor: '#fff7f7' },
+  remarkDeleteItem: { minHeight: 54, paddingLeft: 12, paddingRight: 6, paddingVertical: 5, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#fee2e2' },
+  remarkDeleteItemButton: { width: 44, height: 44, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  remarkDeleteEmpty: { paddingHorizontal: 12, paddingVertical: 13, color: '#71809a', fontSize: 14 },
+  trashIcon: { width: 22, height: 25, alignItems: 'center', justifyContent: 'flex-end' },
+  trashHandle: { position: 'absolute', top: 0, width: 8, height: 3, borderRadius: 2, backgroundColor: '#ef4444' },
+  trashLid: { position: 'absolute', top: 3, width: 18, height: 3, borderRadius: 2, backgroundColor: '#ef4444' },
+  trashBody: { width: 15, height: 17, borderWidth: 2, borderTopWidth: 0, borderColor: '#ef4444', borderBottomLeftRadius: 3, borderBottomRightRadius: 3, flexDirection: 'row', justifyContent: 'space-evenly', paddingTop: 3 },
+  trashLine: { width: 1.5, height: 9, borderRadius: 1, backgroundColor: '#ef4444' },
   newPresetRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
   newPresetInput: { flex: 1, minHeight: 44, fontSize: 14 },
   savePresetAction: { minHeight: 44, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#2457d6', alignItems: 'center', justifyContent: 'center' },
