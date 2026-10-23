@@ -20,6 +20,7 @@ import {
 } from 'pdf-lib';
 import pako from 'pako/dist/pako.cjs.js';
 import { zipSync } from 'fflate';
+import sourceParser from './sourceParser';
 
 const templateAsset = require('./assets/blanko.pdf');
 const FORM_FONT_SIZE = 0;
@@ -235,13 +236,6 @@ async function expandSource(asset) {
   }));
 }
 
-function blockBetween(lines, startLabel, endLabel) {
-  const start = lines.findIndex(line => line === startLabel);
-  if (start < 0) return [];
-  const end = lines.findIndex((line, index) => index > start && line === endLabel);
-  return lines.slice(start + 1, end < 0 ? lines.length : end);
-}
-
 function parseAddressLine(line) {
   // Accept single house numbers as well as ranges such as 58-60, 58 – 60,
   // and common additions such as 12a or 12/14.
@@ -255,67 +249,6 @@ function parseAddressLine(line) {
 
 function parsePostalLine(line) {
   return String(line || '').trim().match(/^(\d{5}),?\s*(.+)$/);
-}
-
-function parsePerson(lines) {
-  // Anschlussnehmer normally uses three lines:
-  //   name / street + house number / postal code + town
-  // Company customers use four lines and put the company between name and address.
-  const hasCompany = lines.length >= 4;
-  const fullName = lines[0] || '';
-  const nameParts = fullName.split(/\s+/).filter(Boolean);
-  const company = hasCompany ? (lines[1] || '') : '';
-  const street = lines[hasCompany ? 2 : 1] || '';
-  const address = parseAddressLine(street);
-  const postal = parsePostalLine(lines[hasCompany ? 3 : 2]);
-  return {
-    fullName,
-    firma: company,
-    vorname: nameParts.shift() || '',
-    name: nameParts.join(' '),
-    strasse: address ? address.street : street,
-    hausnummer: address ? address.houseNumber : '',
-    plz: postal ? postal[1] : '',
-    ort: postal ? postal[2] : ''
-  };
-}
-
-function parseSourceData(text) {
-  const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-  const customer = parsePerson(blockBetween(lines, 'Anschlussnehmer', 'Kontaktdaten:'));
-  const customerLocation = resolvePostalLocation(customer.plz, customer.ort);
-  const applicant = parsePerson(blockBetween(lines, 'Antragsteller', 'Kontaktdaten:'));
-  const installer = parsePerson(blockBetween(lines, 'Fachbetrieb:', 'Fachkraft:'));
-  const site = blockBetween(lines, 'Anschlussstandort', 'Tiefbau');
-  const siteAddress = site.map(parseAddressLine).find(Boolean);
-  const sitePostalMatch = site.map(parsePostalLine).find(Boolean);
-  const sitePostal = sitePostalMatch ? {
-    plz: sitePostalMatch[1],
-    ...resolvePostalLocation(sitePostalMatch[1], sitePostalMatch[2])
-  } : null;
-  const customerContact = blockBetween(lines, 'Kontaktdaten:', 'Antragsteller');
-  const installerContact = blockBetween(lines, 'Antragsteller', 'Antragsdaten');
-  const phone = valueAfter(customerContact, 'Telefon:');
-  const email = valueAfter(customerContact, 'E-Mail:');
-  const installerPhone = valueAfter(installerContact, 'Telefon:') || valueAfter(installerContact, 'Telefon:');
-  const installerEmail = valueAfter(installerContact, 'E-Mail:');
-  const preferredContact = email || phone;
-  return {
-    'Name': customer.name,
-    'Vorname': customer.vorname,
-    'Geburtsdatum bei Privatpersonen bzw RegistergerichtRegisternummer der Firma': customer.firma,
-    'Straße': customer.strasse,
-    'HausNr': customer.hausnummer,
-    'Postleitzahl_2': customer.plz,
-    'Ort_2': customer.plz ? customerLocation.gemeinde : customer.ort,
-    'Telefon Fax EMail': preferredContact,
-    'Straße ggf Anschlussnutzer': siteAddress ? siteAddress.street : '',
-    'HausNr ggf Anschlussnutzer': siteAddress ? siteAddress.houseNumber : '',
-    'Postleitzahl': sitePostal ? sitePostal.plz : '',
-    'Ort': sitePostal ? sitePostal.gemeinde : '',
-    'Ortsteil  FlurstückNr  Etage': sitePostal ? sitePostal.ortsteil : '',
-    // The installer/company section is intentionally left untouched.
-  };
 }
 
 function parseManualSourceData(text) {
@@ -366,11 +299,6 @@ function parseManualSourceData(text) {
     'Ort': customer.plz ? customerLocation.gemeinde : customer.ort,
     'Ortsteil  FlurstückNr  Etage': customerLocation.ortsteil
   };
-}
-
-function valueAfter(lines, label) {
-  const index = lines.findIndex(line => line.startsWith(label));
-  return index < 0 ? '' : lines[index].slice(label.length).trim();
 }
 
 async function createFilledPdfFromValues(values) {
@@ -498,7 +426,7 @@ async function drawStaticCheckboxMarks(targetPdf, targetForm, staticFont) {
 }
 
 async function createFilledPdf(sourceUri) {
-  const values = parseSourceData(await extractPdfText(sourceUri));
+  const values = sourceParser.parseSourceData(await extractPdfText(sourceUri));
   return createFilledPdfFromValues(values);
 }
 

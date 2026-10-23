@@ -5,6 +5,7 @@
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
     "start": "expo start --tunnel",
+    "test:source-parser": "node sourceParser.test.js",
     "android": "expo start --android",
     "ios": "expo start --ios"
   },
