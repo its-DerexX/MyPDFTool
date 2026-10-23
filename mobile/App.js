@@ -196,7 +196,7 @@ function splitRemarkFields(value) {
 
 function getRemarkFilenameSuffix(value) {
   const normalizedRemark = String(value || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase('de-DE');
-  const filenameSuffixes = [RSE_REMARK_PRESET, 'iMSys Kaskade Z1', 'iMSys Kaskade Z2', 'Kaskade Z1', 'Kaskade Z2', 'Meterpay'];
+  const filenameSuffixes = [RSE_REMARK_PRESET, 'Änderung der Einspeiseart', 'iMSys Kaskade Z1', 'iMSys Kaskade Z2', 'Kaskade Z1', 'Kaskade Z2', 'Meterpay'];
   return filenameSuffixes.find(suffix => normalizedRemark === suffix.toLocaleLowerCase('de-DE')) || '';
 }
 
