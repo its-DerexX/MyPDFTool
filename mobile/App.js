@@ -37,7 +37,7 @@ const STATIC_CHECKBOX_FIELDS = PDF_CHECKBOX_FIELDS;
 const GATEWAY_2D_CODE_TYPES = ['qr', 'datamatrix', 'aztec', 'pdf417'];
 const WORK_NUMBER_BARCODE_TYPES = ['ean13', 'ean8', 'code128', 'code39', 'itf14', 'upc_a', 'upc_e'];
 const RSE_REMARK_PRESET = 'iMSys RSE nachgerüstet';
-const DEFAULT_REMARK_PRESETS = ['Antenne außen', 'Antenne innen (Unterputzschrank)', RSE_REMARK_PRESET, 'Kaskade Z1', 'Kaskade Z2', 'Meterpay'].sort((a, b) => a.localeCompare(b, 'de', { sensitivity: 'base' }));
+const DEFAULT_REMARK_PRESETS = ['Änderung der Einspeiseart', 'Antenne außen', 'Antenne innen (Unterputzschrank)', RSE_REMARK_PRESET, 'Kaskade Z1', 'Kaskade Z2', 'Meterpay'].sort((a, b) => a.localeCompare(b, 'de', { sensitivity: 'base' }));
 const LEGACY_REMARK_PRESETS = new Set(['Keine Besonderheiten', 'Kunde informiert', 'Zugang nicht möglich']);
 const REMARK_PRESETS_FILE = new File(Paths.document, 'MyPDFTool-Bemerkungsvorlagen.json');
 const SOURCE_DIRECTORY_NAME = 'MyPDF-Quellen';
