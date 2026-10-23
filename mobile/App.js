@@ -37,8 +37,9 @@ const STATIC_CHECKBOX_FIELDS = PDF_CHECKBOX_FIELDS;
 const GATEWAY_2D_CODE_TYPES = ['qr', 'datamatrix', 'aztec', 'pdf417'];
 const WORK_NUMBER_BARCODE_TYPES = ['ean13', 'ean8', 'code128', 'code39', 'itf14', 'upc_a', 'upc_e'];
 const RSE_REMARK_PRESET = 'iMSys RSE nachgerüstet';
-const DEFAULT_REMARK_PRESETS = ['Änderung der Einspeiseart', 'Antenne außen', 'Antenne innen (Unterputzschrank)', RSE_REMARK_PRESET, 'iMSys PV', 'Kaskade Z1', 'Kaskade Z2', 'Meterpay'].sort((a, b) => a.localeCompare(b, 'de', { sensitivity: 'base' }));
+const DEFAULT_REMARK_PRESETS = ['Änderung der Einspeiseart', 'Antenne außen', 'Antenne innen (Unterputzschrank)', RSE_REMARK_PRESET, 'Kaskade Z1', 'Kaskade Z2', 'Meterpay'].sort((a, b) => a.localeCompare(b, 'de', { sensitivity: 'base' }));
 const LEGACY_REMARK_PRESETS = new Set(['Keine Besonderheiten', 'Kunde informiert', 'Zugang nicht möglich']);
+const REMOVED_REMARK_PRESETS = new Set(['iMSys PV']);
 const REMARK_PRESETS_FILE = new File(Paths.document, 'MyPDFTool-Bemerkungsvorlagen.json');
 const SOURCE_DIRECTORY_NAME = 'MyPDF-Quellen';
 const EDIT_DIRECTORY_NAME = 'MyPDF-Ausgabe';
@@ -1123,7 +1124,7 @@ export default function App() {
         if (REMARK_PRESETS_FILE.exists) {
           const savedPresets = JSON.parse(await REMARK_PRESETS_FILE.text());
           if (Array.isArray(savedPresets) && savedPresets.length) {
-            const customPresets = savedPresets.filter(value => typeof value === 'string' && value.trim() && !LEGACY_REMARK_PRESETS.has(value.trim()));
+            const customPresets = savedPresets.filter(value => typeof value === 'string' && value.trim() && !LEGACY_REMARK_PRESETS.has(value.trim()) && !REMOVED_REMARK_PRESETS.has(value.trim()));
             setRemarkPresets([...new Set([...DEFAULT_REMARK_PRESETS, ...customPresets])].sort((a, b) => a.localeCompare(b, 'de', { sensitivity: 'base' })));
           }
         }
@@ -1220,7 +1221,7 @@ export default function App() {
   const filenameWasChanged = Boolean(selectedEditPdf && hasCustomFilename(selectedEditPdfName, originalEditPdfName));
   const filenameFromRemark = Boolean(getRemarkFilenameSuffix(bemerkungen));
   const filenameChangeRequired = Boolean(selectedEditPdf && !filenameWasChanged && !filenameFromRemark);
-  const customRemarkPresets = remarkPresets.filter(preset => !DEFAULT_REMARK_PRESETS.includes(preset));
+  const customRemarkPresets = remarkPresets.filter(preset => !DEFAULT_REMARK_PRESETS.includes(preset) && !REMOVED_REMARK_PRESETS.has(preset));
   const szaStandMissing = Boolean(ausbauWerkNr.trim() && szaType && (SZA_STAND_FIELDS[szaType] || []).some(standField => !hasNumericStandValue(szaStandValues?.[standField.field], szaType === 'ALT')));
   const onlyRseSelected = isOnlyRseSelected();
   const szeStandMissing = Boolean(!onlyRseSelected && einbauWerkNr.trim() && szeTypeSelected && (SZE_STAND_FIELDS[szeType] || []).some(standField => !hasNumericStandValue(szeStandValues?.[standField.field])));
