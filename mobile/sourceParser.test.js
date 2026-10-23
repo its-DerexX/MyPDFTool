@@ -89,7 +89,7 @@ function testContactCheckboxes() {
     'Kontaktdaten:', 'Telefon: 06000 12345', 'E-Mail: max@example.de',
     'Anschlussstandort', 'Standortweg 2', '63633 Kirchbracht', 'Tiefbau'
   ]));
-  assert.equal(both.P, 'x');
+  assert.equal(both.P, '');
   assert.equal(both.Q, '');
   assert.equal(both.R, 'x');
   assert.equal(both['Telefon Fax EMail'], 'max@example.de');

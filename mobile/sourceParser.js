@@ -277,13 +277,13 @@ function parseSourceData(text) {
   const site = parsePartySection(extractSection(lines, ['Anschlussstandort'], ['Tiefbau', ...SECTION_LABELS]));
   const customerContact = extractSection(lines, ['Kontaktdaten'], ['Antragsteller', 'Antragsdaten', ...SECTION_LABELS]);
   const phone = valueAfterAny(customerContact, ['Telefon:', 'Telefon']);
-  const fax = valueAfterAny(customerContact, ['Fax:', 'Fax']);
   const email = valueAfterAny(customerContact, ['E-Mail:', 'E-Mail', 'EMail:', 'EMail']);
   const contactText = customerContact.join(' ');
   const detectedPhone = phone || contactText.match(/(?:^|\s)(?:\+?\d[\d\s()/.-]{4,}\d)(?=\s|$)/u)?.[0]?.trim() || '';
   const detectedEmail = email || contactText.match(/[^\s@]+@[^\s@]+\.[^\s@]+/u)?.[0] || '';
-  const detectedFax = fax || '';
-  const preferredContact = email || phone;
+  const emailIsValid = isEmailAddress(detectedEmail);
+  const phoneIsValid = isPhoneNumber(detectedPhone);
+  const preferredContact = emailIsValid ? detectedEmail : (phoneIsValid ? detectedPhone : '');
   const siteLocation = resolvePostalLocation(site.plz, site.ort);
 
   return {
@@ -295,9 +295,9 @@ function parseSourceData(text) {
     'Postleitzahl_2': selectedAddress.plz || '',
     'Ort_2': selectedAddress.plz ? customerLocation.gemeinde : (selectedAddress.ort || ''),
     'Telefon Fax EMail': preferredContact,
-    P: isPhoneNumber(detectedPhone) ? 'x' : '',
-    Q: isPhoneNumber(detectedFax) ? 'x' : '',
-    R: isEmailAddress(detectedEmail) ? 'x' : '',
+    P: !emailIsValid && phoneIsValid ? 'x' : '',
+    Q: '',
+    R: emailIsValid ? 'x' : '',
     'Straße ggf Anschlussnutzer': site.strasse || '',
     'HausNr ggf Anschlussnutzer': site.hausnummer || '',
     'Postleitzahl': site.plz || '',
