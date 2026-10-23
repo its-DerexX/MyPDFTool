@@ -240,6 +240,24 @@ function valueAfter(lines, label) {
   return index < 0 ? '' : lines[index].slice(label.length).trim();
 }
 
+function valueAfterAny(lines, labels) {
+  for (const label of labels) {
+    const value = valueAfter(lines, label);
+    if (value) return value;
+  }
+  return '';
+}
+
+function isEmailAddress(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(String(value || '').trim());
+}
+
+function isPhoneNumber(value) {
+  const text = String(value || '').trim();
+  const digits = text.replace(/\D/g, '');
+  return digits.length >= 5 && /^[+\d\s()/.-]+$/u.test(text);
+}
+
 function parseSourceData(text) {
   const lines = String(text || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
   const billing = parsePartySection(extractSection(lines, ['Rechnungsadresse']));
@@ -258,8 +276,13 @@ function parseSourceData(text) {
 
   const site = parsePartySection(extractSection(lines, ['Anschlussstandort'], ['Tiefbau', ...SECTION_LABELS]));
   const customerContact = extractSection(lines, ['Kontaktdaten'], ['Antragsteller', 'Antragsdaten', ...SECTION_LABELS]);
-  const phone = valueAfter(customerContact, 'Telefon:');
-  const email = valueAfter(customerContact, 'E-Mail:');
+  const phone = valueAfterAny(customerContact, ['Telefon:', 'Telefon']);
+  const fax = valueAfterAny(customerContact, ['Fax:', 'Fax']);
+  const email = valueAfterAny(customerContact, ['E-Mail:', 'E-Mail', 'EMail:', 'EMail']);
+  const contactText = customerContact.join(' ');
+  const detectedPhone = phone || contactText.match(/(?:^|\s)(?:\+?\d[\d\s()/.-]{4,}\d)(?=\s|$)/u)?.[0]?.trim() || '';
+  const detectedEmail = email || contactText.match(/[^\s@]+@[^\s@]+\.[^\s@]+/u)?.[0] || '';
+  const detectedFax = fax || '';
   const preferredContact = email || phone;
   const siteLocation = resolvePostalLocation(site.plz, site.ort);
 
@@ -272,6 +295,9 @@ function parseSourceData(text) {
     'Postleitzahl_2': selectedAddress.plz || '',
     'Ort_2': selectedAddress.plz ? customerLocation.gemeinde : (selectedAddress.ort || ''),
     'Telefon Fax EMail': preferredContact,
+    P: isPhoneNumber(detectedPhone) ? 'x' : '',
+    Q: isPhoneNumber(detectedFax) ? 'x' : '',
+    R: isEmailAddress(detectedEmail) ? 'x' : '',
     'Straße ggf Anschlussnutzer': site.strasse || '',
     'HausNr ggf Anschlussnutzer': site.hausnummer || '',
     'Postleitzahl': site.plz || '',

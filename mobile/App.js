@@ -292,6 +292,8 @@ function parseManualSourceData(text) {
     'Postleitzahl_2': customer.plz,
     'Ort_2': customer.plz ? customerLocation.gemeinde : customer.ort,
     'Telefon Fax EMail': '',
+    P: '',
+    Q: '',
     R: '',
     'Straße ggf Anschlussnutzer': customer.strasse,
     'HausNr ggf Anschlussnutzer': customer.hausnummer,

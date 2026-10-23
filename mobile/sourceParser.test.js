@@ -83,8 +83,38 @@ function testAddressOnlyBillingAndFallback() {
   assert.equal(withoutBilling.HausNr, '17');
 }
 
+function testContactCheckboxes() {
+  const both = parseSourceData(source([
+    'Anschlussnehmer', 'Max Muster', 'Musterstraße 1', '63633 Birstein',
+    'Kontaktdaten:', 'Telefon: 06000 12345', 'E-Mail: max@example.de',
+    'Anschlussstandort', 'Standortweg 2', '63633 Kirchbracht', 'Tiefbau'
+  ]));
+  assert.equal(both.P, 'x');
+  assert.equal(both.Q, '');
+  assert.equal(both.R, 'x');
+  assert.equal(both['Telefon Fax EMail'], 'max@example.de');
+
+  const phoneOnly = parseSourceData(source([
+    'Anschlussnehmer', 'Max Muster', 'Musterstraße 1', '63633 Birstein',
+    'Kontaktdaten:', 'Telefon: 06000 12345',
+    'Anschlussstandort', 'Standortweg 2', '63633 Kirchbracht', 'Tiefbau'
+  ]));
+  assert.equal(phoneOnly.P, 'x');
+  assert.equal(phoneOnly.Q, '');
+  assert.equal(phoneOnly.R, '');
+
+  const noContact = parseSourceData(source([
+    'Anschlussnehmer', 'Max Muster', 'Musterstraße 1', '63633 Birstein',
+    'Anschlussstandort', 'Standortweg 2', '63633 Kirchbracht', 'Tiefbau'
+  ]));
+  assert.equal(noContact.P, '');
+  assert.equal(noContact.Q, '');
+  assert.equal(noContact.R, '');
+}
+
 testLegalForms();
 testRecipientClassification();
 testBillingPriority();
 testAddressOnlyBillingAndFallback();
+testContactCheckboxes();
 console.log('sourceParser.test.js: alle Tests bestanden');
